@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>職業パス探索</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  :root { --navy:#1c2b4a; --grey:#7a8aa0; --cyan:#00d2e8; --bg:#f4f8fb; --nope:#e0674f; }
+  html, body { height:100%; }
+  body { background:var(--bg); color:var(--navy); overflow:hidden;
+         font-family:"Hiragino Sans","Yu Gothic UI","Noto Sans JP","Meiryo",system-ui,sans-serif; }
+  .app { height:100%; display:flex; flex-direction:column; padding-top:env(safe-area-inset-top); }
+  .stage { flex:1; position:relative; width:min(88vw,440px); margin:1.2rem auto .5rem; min-height:0; }
+  .card-s { position:absolute; inset:0; background:#fff; border-radius:28px; overflow:hidden;
+            box-shadow:0 12px 32px rgba(28,43,74,.12); display:flex; flex-direction:column;
+            touch-action:pan-y; user-select:none; will-change:transform; cursor:pointer; }
+  .card-s.back { pointer-events:none; box-shadow:0 6px 16px rgba(28,43,74,.08); }
+  .card-s.b1 { transform:rotate(-2.2deg) translateY(-6px) scale(.97); }
+  .card-s.b2 { transform:rotate(1.8deg) translateY(-3px) scale(.98); }
+  .photo { flex:0 0 62%; background:linear-gradient(135deg,#9fdbe6,#5aa9c9); position:relative; }
+  .photo img { width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; }
+  .text { flex:1; padding:1.1rem 1.5rem; overflow:hidden; }
+  .text h2 { font-size:clamp(1.05rem,4.6vw,1.5rem); line-height:1.5; font-weight:700; margin:0 0 .5rem; }
+  .text p { font-size:clamp(.85rem,3.6vw,1rem); line-height:1.8; color:var(--grey); margin:0; }
+  .stamp { position:absolute; top:1.2rem; padding:.2rem .8rem; border:3px solid; border-radius:12px;
+           font-weight:700; font-size:1.3rem; opacity:0; background:#fffc; }
+  .stamp.like { left:1rem; color:var(--cyan); transform:rotate(-10deg); }
+  .stamp.nope { right:1rem; color:var(--nope); transform:rotate(10deg); }
+  .actions { display:flex; justify-content:center; align-items:flex-start; gap:1.2rem; padding:.4rem 0 1rem; }
+  .act { display:flex; flex-direction:column; align-items:center; gap:.5rem; width:84px; font-size:.85rem; }
+  .round { width:64px; height:64px; border-radius:50%; border:0; background:#fff; display:grid; place-items:center;
+           box-shadow:0 8px 20px rgba(28,43,74,.12); color:var(--grey); }
+  .round.yes { color:var(--cyan); }
+  .act.no span { color:var(--grey); } .act.yes span { color:var(--cyan); }
+  .more { flex:0 1 230px; height:54px; margin-top:5px; border:1.5px solid var(--cyan); background:#fff; color:var(--navy);
+          border-radius:999px; display:flex; align-items:center; justify-content:center; gap:.6rem; font-size:1rem; }
+  .more svg { color:var(--cyan); }
+  .round:active, .more:active { transform:scale(.95); }
+  button:focus-visible { outline:3px solid var(--navy); outline-offset:2px; }
+  nav { display:flex; justify-content:space-around; background:#fff; border-top:1px solid #e6edf3;
+        padding:.55rem 0 calc(.55rem + env(safe-area-inset-bottom)); }
+  nav button { background:none; border:0; display:flex; flex-direction:column; align-items:center; gap:.25rem;
+               font-size:.7rem; color:var(--grey); flex:1; cursor:default; }
+  nav button.active { color:var(--cyan); }
+  #storyModal .modal-dialog { max-width:min(88vw,440px); margin-left:auto; margin-right:auto; }
+  #storyModal .modal-content { border:0; border-radius:28px; overflow:hidden; display:flex; flex-direction:column;
+                               max-height:calc(100vh - 2rem); max-height:calc(100dvh - 2rem); }
+  #mBody { flex:1 1 auto; min-height:0; overflow-y:auto; }
+  .m-close { position:absolute; top:.8rem; right:.8rem; z-index:5; width:2rem; height:2rem; padding:0;
+             background-color:#fffd; border-radius:50%; background-size:.8rem; opacity:1; }
+  .m-photo { aspect-ratio:4/3; background:linear-gradient(135deg,#9fdbe6,#5aa9c9); }
+  .m-photo img { width:100%; height:100%; object-fit:cover; display:block; }
+  .m-text { padding:1.2rem 1.5rem 1.5rem; }
+  .m-text h2 { font-size:clamp(1.05rem,4.6vw,1.5rem); line-height:1.5; font-weight:700; margin:0 0 .6rem; }
+  .m-abs { color:var(--grey); line-height:1.8; margin-bottom:1rem; }
+  #mStory p { line-height:1.9; margin-bottom:.9rem; }
+  .m-foot { flex-direction:column; align-items:stretch; gap:.6rem; border-top:1px solid #e6edf3;
+            padding:.8rem 1rem calc(.8rem + env(safe-area-inset-bottom)); }
+  .m-ask { margin:0; text-align:center; font-size:.8rem; color:var(--grey); }
+  .m-choices { display:grid; grid-template-columns:repeat(3,1fr); gap:.6rem; width:100%; }
+  .m-btn { border:1.5px solid #d5dee8; background:#fff; color:var(--navy); border-radius:999px; padding:.65rem 0; font-size:.95rem; }
+  .m-btn.nope { color:var(--nope); border-color:#f0c4bb; }
+  .m-btn.primary { background:var(--cyan); border-color:var(--cyan); font-weight:700; }
+  .m-btn:active { transform:scale(.96); }
+  .done { text-align:center; padding:2rem 1rem; }
+  @media (prefers-reduced-motion:reduce){ .card-s{ transition:none !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 21s-8-5.2-8-11a4.6 4.6 0 0 1 8-3 4.6 4.6 0 0 1 8 3c0 5.8-8 11-8 11z" fill="currentColor"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6c-2-1.5-5-2-8-2v14c3 0 6 .5 8 2 2-1.5 5-2 8-2V4c-3 0-6 .5-8 2zM12 6v14" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" fill="currentColor"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></symbol>
+  <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M15.5 8.5l-2 5-5 2 2-5z" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></symbol>
+</svg>
+
+<div class="app">
+  <div class="stage" id="stage"></div>
+  <div class="actions" id="actions">
+    <div class="act no"><button class="round" id="btnNo" aria-label="興味なし（左矢印キー）"><svg width="30" height="30"><use href="#i-x"/></svg></button><span>興味なし</span></div>
+    <button class="more" id="btnMore"><svg width="26" height="26"><use href="#i-book"/></svg>続きを読む</button>
+    <div class="act yes"><button class="round yes" id="btnYes" aria-label="気になる（右矢印キー）"><svg width="34" height="34"><use href="#i-heart"/></svg></button><span>気になる</span></div>
+  </div>
+  <nav>
+    <button type="button" class="active" aria-current="page"><svg width="28" height="28"><use href="#i-home"/></svg>ホーム</button>
+    <button type="button"><svg width="28" height="28"><use href="#i-map"/></svg>職業探索マップ</button>
+    <button type="button"><svg width="28" height="28"><use href="#i-compass"/></svg>スキルマップ</button>
+    <button type="button"><svg width="28" height="28"><use href="#i-user"/></svg>設定</button>
+  </nav>
+</div>
+
+<div class="modal fade" id="storyModal" tabindex="-1" aria-labelledby="mTitle">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <button type="button" class="btn-close m-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+      <div class="modal-body p-0" id="mBody">
+        <div class="m-photo" id="mImg"></div>
+        <div class="m-text"><h2 id="mTitle"></h2><p class="m-abs" id="mAbs"></p><div id="mStory"></div></div>
+      </div>
+      <div class="modal-footer m-foot">
+        <p class="m-ask">この職業にどのくらい興味がありますか？</p>
+        <div class="m-choices">
+          <button type="button" class="m-btn nope" data-choice="detail_nope">興味なし</button>
+          <button type="button" class="m-btn" data-choice="detail_neutral">普通</button>
+          <button type="button" class="m-btn primary" data-choice="detail_like">気になる</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let careers = [], idx = 0, busy = false, liked = [];
+const stage = document.getElementById('stage');
+const modal = new bootstrap.Modal('#storyModal');
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function cardHTML(c) {
+  return `<div class="photo"><img src="/images/${c.image}" alt="" draggable="false" onerror="this.remove()">
+    <div class="stamp like">気になる</div><div class="stamp nope">興味なし</div></div>
+    <div class="text"><h2>${esc(c.title)}</h2><p>${esc(c.abstract)}</p></div>`;
+}
+
+function render() {
+  stage.innerHTML = '';
+  if (idx >= careers.length) return showDone();
+  document.getElementById('actions').style.visibility = 'visible';
+  if (careers[idx + 1]) stage.insertAdjacentHTML('beforeend', '<div class="card-s back b1"></div>');
+  if (careers[idx + 2]) stage.insertAdjacentHTML('beforeend', '<div class="card-s back b2"></div>');
+  const el = document.createElement('div'); el.className = 'card-s'; el.innerHTML = cardHTML(careers[idx]);
+  stage.appendChild(el); attachDrag(el);
+}
+
+function attachDrag(el) {
+  let sx = 0, dx = 0, drag = false;
+  const like = el.querySelector('.stamp.like'), nope = el.querySelector('.stamp.nope');
+  el.addEventListener('pointerdown', e => { if (busy) return; drag = true; dx = 0; sx = e.clientX; el.style.transition = 'none'; el.setPointerCapture(e.pointerId); });
+  el.addEventListener('pointermove', e => {
+    if (!drag) return; dx = e.clientX - sx;
+    el.style.transform = `translateX(${dx}px) rotate(${dx / 18}deg)`;
+    like.style.opacity = Math.max(0, dx / 100); nope.style.opacity = Math.max(0, -dx / 100);
+  });
+  el.addEventListener('pointerup', () => {
+    if (!drag) return; drag = false;
+    if (Math.abs(dx) < 6) { openStory(); }               // タップ = 「続きを読む」と同じ
+    else if (Math.abs(dx) > 100) { decide(dx > 0 ? 'swipe_like' : 'swipe_nope'); }
+    else { el.style.transition = 'transform .25s'; el.style.transform = ''; like.style.opacity = nope.style.opacity = 0; }
+    dx = 0;
+  });
+  el.addEventListener('pointercancel', () => {
+    if (!drag) return; drag = false; dx = 0;
+    el.style.transition = 'transform .25s'; el.style.transform = ''; like.style.opacity = nope.style.opacity = 0;
+  });
+}
+
+const FLY = { swipe_like:'right', detail_like:'right', swipe_nope:'left', detail_nope:'left' };
+let modalAction = null;
+
+function openStory() {
+  const c = careers[idx]; if (!c || busy) return;
+  modalAction = null;
+  document.getElementById('mImg').innerHTML = `<img src="/images/${c.image}" alt="" onerror="this.remove()">`;
+  document.getElementById('mTitle').textContent = c.title;
+  document.getElementById('mAbs').textContent = c.abstract;
+  document.getElementById('mStory').innerHTML = c.story.map(p => `<p>${esc(p)}</p>`).join('');
+  document.getElementById('mBody').scrollTop = 0;
+  modal.show();
+}
+
+// 詳細ページ：3択のどれかを押す → 閉じる。何も押さずに閉じた場合は detail_exit
+document.querySelectorAll('[data-choice]').forEach(b => b.onclick = () => { modalAction = b.dataset.choice; modal.hide(); });
+document.getElementById('storyModal').addEventListener('hidden.bs.modal', () => {
+  const action = modalAction || 'detail_exit'; modalAction = null;
+  decide(action);
+});
+
+function decide(action) {
+  if (busy || idx >= careers.length) return; busy = true;
+  const c = careers[idx], el = stage.querySelector('.card-s:not(.back)'), dir = FLY[action];
+  el.style.transition = 'transform .35s, opacity .35s';
+  el.style.transform = dir ? `translateX(${dir === 'right' ? 600 : -600}px) rotate(${dir === 'right' ? 25 : -25}deg)`
+                           : 'translateY(-60px) scale(.96)';
+  el.style.opacity = 0;
+  const saved = fetch('/api/swipes', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ career_id: c.id, action }) })
+    .then(r => r.json()).then(d => { if (d.score > 0) liked.push(c); }).catch(console.error);
+  Promise.all([saved, new Promise(r => setTimeout(r, 300))]).then(() => { idx++; busy = false; render(); });
+}
+
+function showDone() {
+  document.getElementById('actions').style.visibility = 'hidden';
+  stage.innerHTML = `<div class="text-center pt-5"><h2 class="h4">すべてのストーリーを見ました</h2>
+    <p class="text-secondary mt-3">${liked.length ? '気になる職業：' : '気になる職業はありませんでした。'}</p>
+    <ul class="list-unstyled">${liked.map(c => `<li class="mb-2">${esc(c.title)}</li>`).join('')}</ul>
+    <button class="btn btn-outline-info rounded-pill px-4" onclick="idx=0;liked=[];render()">もう一度見る</button></div>`;
+}
+
+document.getElementById('btnNo').onclick = () => decide('swipe_nope');
+document.getElementById('btnYes').onclick = () => decide('swipe_like');
+document.getElementById('btnMore').onclick = openStory;
+document.addEventListener('keydown', e => {
+  if (document.querySelector('.modal.show')) return;
+  if (e.key === 'ArrowLeft') decide('swipe_nope');
+  if (e.key === 'ArrowRight') decide('swipe_like');
+});
+
+fetch('/api/careers').then(r => r.json()).then(d => { careers = d; render(); });
+</script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>职业路径探索</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  :root { --ink:#1f2a37; --paper:#eef2f1; --like:#2f8f6b; --nope:#c8553d; --card:#fff; }
+  html, body { height:100%; }
+  body { background:var(--paper); color:var(--ink); overflow:hidden;
+         font-family:"Noto Serif SC","Songti SC",Georgia,serif; }
+  .app { height:100%; display:flex; flex-direction:column; padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  header { text-align:center; padding:.9rem 1rem .4rem; }
+  header h1 { font-size:1.15rem; margin:0; font-weight:700; }
+  header small { font-family:system-ui,sans-serif; color:#5b6b78; }
+  .stage { flex:1; position:relative; width:min(92vw,440px); margin:0 auto; min-height:0; }
+  .card-s { position:absolute; inset:.5rem 0; background:var(--card); border-radius:22px;
+            box-shadow:0 10px 30px rgba(31,42,55,.15); overflow:hidden; display:flex; flex-direction:column;
+            touch-action:pan-y; user-select:none; will-change:transform; }
+  .card-s.under { transform:scale(.95) translateY(10px); opacity:.7; pointer-events:none; }
+  .photo { flex:0 0 52%; background:linear-gradient(135deg,#a8c3b8,#6f8fa3); position:relative; }
+  .photo img { width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; }
+  .body-s { flex:1; padding:1rem 1.2rem; overflow:hidden; }
+  .body-s h2 { font-size:1.2rem; line-height:1.4; font-weight:700; }
+  .body-s p { font-size:.95rem; line-height:1.75; color:#3d4b58; margin-bottom:.5rem; }
+  .stamp { position:absolute; top:1.2rem; padding:.2rem .8rem; border:3px solid; border-radius:10px;
+           font-weight:700; font-size:1.4rem; opacity:0; background:#fff9; }
+  .stamp.like { left:1rem; color:var(--like); transform:rotate(-12deg); }
+  .stamp.nope { right:1rem; color:var(--nope); transform:rotate(12deg); }
+  .actions { display:flex; justify-content:center; align-items:center; gap:1.4rem; padding:.6rem 0 1rem; }
+  .round { width:62px; height:62px; border-radius:50%; border:0; background:#fff; font-size:1.6rem;
+           box-shadow:0 6px 16px rgba(31,42,55,.15); }
+  .round.no { color:var(--nope); } .round.yes { color:var(--like); }
+  .round:focus-visible, .btn:focus-visible { outline:3px solid var(--ink); outline-offset:2px; }
+  .round:active { transform:scale(.94); }
+  .modal-body p { line-height:1.85; }
+  .done { text-align:center; padding:2rem 1rem; }
+  @media (min-width:768px){ .stage{ width:440px; } }
+  @media (prefers-reduced-motion:reduce){ .card-s{ transition:none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header><h1>职业路径探索</h1><small id="progress"></small></header>
+  <div class="stage" id="stage"></div>
+  <div class="actions" id="actions">
+    <button class="round no" id="btnNo" aria-label="不喜欢（左箭头）">✕</button>
+    <button class="btn btn-outline-dark rounded-pill" id="btnMore">读完整故事</button>
+    <button class="round yes" id="btnYes" aria-label="喜欢（右箭头）">♥</button>
+  </div>
+</div>
+
+<div class="modal fade" id="storyModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" id="mTitle"></h5>
+        <button class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button></div>
+      <div class="modal-body" id="mBody"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let careers = [], idx = 0, busy = false, liked = [];
+const stage = document.getElementById('stage');
+const modal = new bootstrap.Modal('#storyModal');
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function cardHTML(c) {
+  return `<div class="photo"><img src="/images/${c.image}" alt="" draggable="false" onerror="this.remove()">
+    <div class="stamp like">喜欢</div><div class="stamp nope">不喜欢</div></div>
+    <div class="body-s"><h2>${esc(c.title)}</h2><p>${esc(c.abstract)}</p></div>`;
+}
+
+function render() {
+  stage.innerHTML = '';
+  document.getElementById('progress').textContent = idx < careers.length ? `${idx + 1} / ${careers.length}` : '';
+  if (idx >= careers.length) return showDone();
+  document.getElementById('actions').style.visibility = 'visible';
+  if (careers[idx + 1]) {
+    const u = document.createElement('div'); u.className = 'card-s under'; u.innerHTML = cardHTML(careers[idx + 1]);
+    stage.appendChild(u);
+  }
+  const el = document.createElement('div'); el.className = 'card-s'; el.innerHTML = cardHTML(careers[idx]);
+  stage.appendChild(el); attachDrag(el);
+}
+
+function attachDrag(el) {
+  let sx = 0, dx = 0, drag = false;
+  const like = el.querySelector('.stamp.like'), nope = el.querySelector('.stamp.nope');
+  el.addEventListener('pointerdown', e => { if (busy) return; drag = true; sx = e.clientX; el.style.transition = 'none'; el.setPointerCapture(e.pointerId); });
+  el.addEventListener('pointermove', e => {
+    if (!drag) return; dx = e.clientX - sx;
+    el.style.transform = `translateX(${dx}px) rotate(${dx / 18}deg)`;
+    like.style.opacity = Math.max(0, dx / 100); nope.style.opacity = Math.max(0, -dx / 100);
+  });
+  const end = () => {
+    if (!drag) return; drag = false;
+    if (Math.abs(dx) > 100) decide(dx > 0);
+    else { el.style.transition = 'transform .25s'; el.style.transform = ''; like.style.opacity = nope.style.opacity = 0; }
+    dx = 0;
+  };
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+}
+
+function decide(isLike) {
+  if (busy || idx >= careers.length) return; busy = true;
+  const c = careers[idx], el = stage.querySelector('.card-s:not(.under)');
+  el.style.transition = 'transform .35s, opacity .35s';
+  el.style.transform = `translateX(${isLike ? 600 : -600}px) rotate(${isLike ? 25 : -25}deg)`; el.style.opacity = 0;
+  if (isLike) liked.push(c);
+  fetch('/api/swipes', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ career_id: c.id, liked: isLike }) }).catch(console.error);
+  setTimeout(() => { idx++; busy = false; render(); }, 300);
+}
+
+function showDone() {
+  document.getElementById('actions').style.visibility = 'hidden';
+  stage.innerHTML = `<div class="done"><h2 class="h4">你看完了所有故事</h2>
+    <p class="text-secondary">${liked.length ? '你喜欢的职业：' : '这次没有标记喜欢的职业。'}</p>
+    <ul class="list-unstyled">${liked.map(c => `<li class="mb-2">♥ ${esc(c.title)}</li>`).join('')}</ul>
+    <button class="btn btn-dark rounded-pill" onclick="idx=0;liked=[];render()">再玩一次</button></div>`;
+}
+
+document.getElementById('btnNo').onclick = () => decide(false);
+document.getElementById('btnYes').onclick = () => decide(true);
+document.getElementById('btnMore').onclick = () => {
+  const c = careers[idx]; if (!c) return;
+  document.getElementById('mTitle').textContent = c.title;
+  document.getElementById('mBody').innerHTML = `<p class="fw-semibold">${esc(c.abstract)}</p>` + c.story.map(p => `<p>${esc(p)}</p>`).join('');
+  modal.show();
+};
+document.addEventListener('keydown', e => {
+  if (document.querySelector('.modal.show')) return;
+  if (e.key === 'ArrowLeft') decide(false);
+  if (e.key === 'ArrowRight') decide(true);
+});
+
+fetch('/api/careers').then(r => r.json()).then(d => { careers = d; render(); });
+</script>
+</body>
+</html>
