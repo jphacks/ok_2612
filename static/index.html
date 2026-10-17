@@ -43,8 +43,9 @@
   nav button { background:none; border:0; display:flex; flex-direction:column; align-items:center; gap:.25rem;
                font-size:.7rem; color:var(--grey); flex:1; cursor:default; }
   nav button.active { color:var(--cyan); }
-  #storyModal .modal-dialog { max-width:min(88vw,440px); margin-left:auto; margin-right:auto; }
-  #storyModal .modal-content { border:0; border-radius:28px; overflow:hidden; display:flex; flex-direction:column;
+  nav button.live { cursor:pointer; }
+  #storyModal .modal-dialog, #exploreModal .modal-dialog { max-width:min(88vw,440px); margin-left:auto; margin-right:auto; }
+  #storyModal .modal-content, #exploreModal .modal-content { border:0; border-radius:28px; overflow:hidden; display:flex; flex-direction:column;
                                max-height:calc(100vh - 2rem); max-height:calc(100dvh - 2rem); }
   #mBody { flex:1 1 auto; min-height:0; overflow-y:auto; }
   .m-close { position:absolute; top:.8rem; right:.8rem; z-index:5; width:2rem; height:2rem; padding:0;
@@ -85,6 +86,9 @@
   .tl-dot::after { content:""; position:absolute; left:50%; top:.5rem; width:10px; height:10px; border-radius:50%; background:#b9c9d8; transform:translateX(-50%); }
   .tl-item:last-child .tl-dot::before { display:none; }
   .tl-item:last-child .tl-time, .tl-item:last-child .tl-act { padding-bottom:0; }
+  .ex-body { flex:1 1 auto; min-height:0; overflow-y:auto; padding:3.2rem 1.5rem 1.5rem; }
+  .ex-body h3 { font-size:1rem; font-weight:700; margin:1.2rem 0 .6rem; }
+  .ex-main { background:var(--cyan); border-radius:16px; padding:.9rem 1rem; }
   @media (prefers-reduced-motion:reduce){ .card-s{ transition:none !important; } }
 </style>
 </head>
@@ -108,7 +112,7 @@
   </div>
   <nav>
     <button type="button" class="active" aria-current="page"><svg width="28" height="28"><use href="#i-home"/></svg>ホーム</button>
-    <button type="button"><svg width="28" height="28"><use href="#i-map"/></svg>職業探索マップ</button>
+    <button type="button" class="live" id="navMap"><svg width="28" height="28"><use href="#i-map"/></svg>職業探索マップ</button>
     <button type="button"><svg width="28" height="28"><use href="#i-compass"/></svg>スキルマップ</button>
     <button type="button"><svg width="28" height="28"><use href="#i-user"/></svg>設定</button>
   </nav>
@@ -140,6 +144,15 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="exploreModal" tabindex="-1" aria-labelledby="exTitle">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <button type="button" class="btn-close m-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+      <div class="ex-body" id="exBody"></div>
     </div>
   </div>
 </div>
@@ -277,6 +290,27 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowLeft') decide('swipe_nope');
   if (e.key === 'ArrowRight') decide('swipe_like');
 });
+
+// ---- 職業探索マップ：バックエンドの multi-agent 分析を実行して結果を表示 ----
+const exModal = new bootstrap.Modal('#exploreModal');
+const exItem = k => `<li class="mb-2"><b>${esc(k.keyword)}</b>${k.confidence != null ? ` <span class="text-secondary">${Math.round(k.confidence * 100)}%</span>` : ''}<br><small class="text-secondary">${esc(k.reason || '')}</small></li>`;
+const exSec = (t, arr) => arr && arr.length ? `<h3>${t}</h3><ul class="list-unstyled m-0">${arr.map(exItem).join('')}</ul>` : '';
+function exploreHTML(d) {
+  return `<h2 class="h5 fw-bold mb-3" id="exTitle">あなたのキーワード</h2><p class="m-abs">${esc(d.analysis || '')}</p>
+    <h3>いちばんの軸</h3><div class="ex-main"><b>${esc(d.main_keyword.keyword)}</b> ${Math.round(d.main_keyword.confidence * 100)}%<br><small>${esc(d.main_keyword.reason || '')}</small></div>`
+    + exSec('ほかの気になるキーワード', d.other_positive) + exSec('苦手そうなキーワード', d.negative) + exSec('探索してみたいキーワード', d.explore);
+}
+document.getElementById('navMap').onclick = async () => {
+  const body = document.getElementById('exBody');
+  body.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-info" role="status"></div><p class="mt-3 text-secondary">あなたの好みを分析中…（少し時間がかかります）</p></div>';
+  exModal.show();
+  try {
+    const r = await fetch('/api/explore/run', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    body.innerHTML = exploreHTML(d);
+  } catch (e) { body.innerHTML = `<h2 class="h5 mb-3" id="exTitle">分析できませんでした</h2><p class="text-danger">${esc(e.message)}</p>`; }
+};
 
 fetch('/api/careers').then(r => r.json()).then(d => { careers = d; render(); });
 </script>
