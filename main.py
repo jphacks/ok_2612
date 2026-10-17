@@ -9,6 +9,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+import agents
+
 BASE = Path(__file__).parent
 SWIPE_FILE = BASE / "data" / "swipes.jsonl"   # 每行一条记录（JSON Lines）
 SWIPE_FILE.parent.mkdir(exist_ok=True)
@@ -118,6 +120,29 @@ def save_keywords(pick: KeywordPick):
 def read_keywords():
     with _kw_lock:
         return _load_keywords()
+
+
+# ---- 職業探索マップ：multi-agent 分析 ----
+_explore_lock = threading.Lock()
+
+
+@app.post("/api/explore/run")
+def explore_run():
+    if not _explore_lock.acquire(blocking=False):
+        raise HTTPException(409, "分析中です。しばらくお待ちください。")
+    try:
+        return agents.run_pipeline()
+    except agents.PipelineError as e:
+        raise HTTPException(e.status, str(e))
+    finally:
+        _explore_lock.release()
+
+
+@app.get("/api/explore/result")
+def explore_result():
+    if not agents.CANDIDATES_FILE.exists():
+        raise HTTPException(404, "まだ分析結果がありません。")
+    return json.loads(agents.CANDIDATES_FILE.read_text(encoding="utf-8"))
 
 
 app.mount("/images", StaticFiles(directory=BASE / "images"), name="images")
