@@ -29,7 +29,7 @@ class PipelineError(Exception):
         self.status = status
 
 
-# ------------------------------------------------------------ prompts
+# ------------------------------------------------------------ プロンプト
 AGENT1_SYSTEM = """あなたは「職業ストーリー特徴抽出エージェント」です。
 入力は、ある職業に就いている人が書いた体験談(story)と1日のスケジュール(schedule)、そしてユーザーがその職業に示した関心度スコア(score)です。
 scoreは -10 〜 +10 の範囲で、大きいほどユーザーはその職業に強い興味を示しています(0 は無関心・どちらでもない)。
@@ -58,7 +58,7 @@ AGENT2_SYSTEM = """あなたは「特徴ウェイティング(権衡)エージ�
 
 視点B【明示的な認識】: ユーザー本人が自分で選んだ「惹かれた理由」のキーワードです。データは {"キーワード": 選択回数} の形式で、
   - キーワード: ユーザーが職業の詳細ページで「気になる」を押した後、その職業の特徴タグの中から自分で選んだもの(自由入力ではなく、提示された選択肢から選んでいる)。
-  - 数字: ユーザーがそのキーワードを選んだ回数(異なる職業をまたいで、繰り返し選んだ回数。マップ画面で「この傾向をもっと探る」を押した場合や、設定画面でユーザーが自分から申告したキーワードは3回分として加算されています)。多いほどユーザーが明確に重視している特徴です。
+  - 数字: ユーザーがそのキーワードを選んだ回数(異なる職業をまたいで、繰り返し選んだ回数。マップ画面で「この傾向をもっと探る」を押した場合や、設定画面でユーザーが自分から申告したキーワードは3回分として加算されています。環境が騒がしい状況で選ばれた分は重みが0.7倍に割り引かれ、小数になることがあります)。多いほどユーザーが明確に重視している特徴です。
   すべてポジティブな情報で、否定的な情報は含みません。選ばれなかったことは「嫌い」を意味しません(理由を選ばずに進んだだけの可能性があります)。空の場合もあります。
 
 2つの視点は補完し合うこともあれば、矛盾することもあります(例: 自分では好きだと言う特徴が、行動では低スコアの職業に多く現れる)。矛盾があれば、どちらをどの程度信頼するか慎重に比較検討してください。同じ意味のキーワードは統合して構いません。
@@ -74,7 +74,7 @@ main_keyword / other_positive / negative には confidence(0.0〜1.0)を、全�
 {"analysis":"","main_keyword":{"keyword":"","confidence":0.0,"reason":""},"other_positive":[{"keyword":"","confidence":0.0,"reason":""}],"negative":[{"keyword":"","confidence":0.0,"reason":""}],"explore":[{"keyword":"","reason":""}]}"""
 
 
-# ------------------------------------------------------------ helpers
+# ------------------------------------------------------------ ヘルパー
 def _now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -113,7 +113,7 @@ def call_llm(client, model, system, user):
             return json.loads(r.choices[0].message.content)
         except Exception as e:
             last = e
-            log.warning("LLM call failed: %r", e)
+            log.warning("LLM の呼び出しに失敗しました: %r", e)
     raise last
 
 
@@ -148,7 +148,7 @@ def latest_swipes():
     return [r for r in latest.values() if r.get("story") is not None and "score" in r]
 
 
-# ------------------------------------------------------------ agent 1
+# ------------------------------------------------------------ Agent 1: 職業特徴の抽出
 def agent1_describe(client, model, records):
     def one(rec):
         # このエージェントに渡すのは score / story / schedule だけ
@@ -178,7 +178,7 @@ def agent1_describe(client, model, records):
     return doc
 
 
-# ------------------------------------------------------------ agent 2
+# ------------------------------------------------------------ Agent 2: 特徴の重み付け
 def agent2_weigh(client, model):
     describe = json.loads(DESCRIBE_FILE.read_text(encoding="utf-8"))
     userkw = {}
@@ -227,7 +227,7 @@ AGENT3_SYSTEM = """あなたは「検証と正当化(validation and justificatio
 {"items":[{"group":"","keyword":"","keep":true,"remove_reason":"","justification":""}]}
 削除する項目の justification は空文字にする。"""
 
-# ------------------------------------------------------------ agent 3
+# ------------------------------------------------------------ Agent 3: 検証と正当化
 def agent3_validate(client, model):
     doc = json.loads(CANDIDATES_FILE.read_text(encoding="utf-8"))
 
@@ -269,7 +269,7 @@ def agent3_validate(client, model):
     return doc
 
 
-# ------------------------------------------------------------ agent 4 & 5 (キャリアビジョン)
+# ------------------------------------------------------------ Agent 4・5（キャリアビジョン）
 KEYWORD_GUIDE = """入力のキーワード候補の意味:
   - main_keyword: ユーザーが最も強く惹かれていると推定される中心的な特徴
   - other_positive: その他のポジティブな特徴
@@ -377,11 +377,11 @@ def run_vision():
     except PipelineError:
         raise
     except Exception as e:
-        log.exception("vision failed")
+        log.exception("キャリアビジョンの作成に失敗しました")
         raise PipelineError(f"キャリアビジョンの作成中にエラーが発生しました（{type(e).__name__}）。", 502)
 
 
-# ------------------------------------------------------------ pipeline
+# ------------------------------------------------------------ パイプライン
 def run_pipeline():
     key, model = load_config()
     records = latest_swipes()
@@ -395,5 +395,5 @@ def run_pipeline():
     except PipelineError:
         raise
     except Exception as e:
-        log.exception("pipeline failed")
+        log.exception("分析パイプラインが失敗しました")
         raise PipelineError(f"分析中にエラーが発生しました（{type(e).__name__}）。", 502)

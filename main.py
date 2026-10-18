@@ -1,5 +1,10 @@
 import json
+import os
+import subprocess
+import sys
 import threading
+import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -14,27 +19,149 @@ import selector
 
 BASE = Path(__file__).parent
 ESCAPE_FILE = BASE / "data" / "escapekeyword.json"   # 「ちょっと違うかも」を押したキーワード
-SWIPE_FILE = BASE / "data" / "swipes.jsonl"   # 每行一条记录（JSON Lines）
+SWIPE_FILE = BASE / "data" / "swipes.jsonl"   # 1行に1レコード（JSON Lines）
 SWIPE_FILE.parent.mkdir(exist_ok=True)
 
-# ---- 职业故事存放在 data/careers.json，改内容不需要动这个文件 ----
+# ---- 職業ストーリーは data/careers.json に置く。内容を変えるときにこのファイルを触る必要はない ----
 CAREERS_FILE = BASE / "data" / "careers.json"
 with CAREERS_FILE.open(encoding="utf-8") as f:
     CAREERS = json.load(f)
 CAREER_MAP = {c["id"]: c for c in CAREERS}
 
-app = FastAPI(title="Career Path Explorer")
+@asynccontextmanager
+async def lifespan(app):
+    start_environment_monitor()      # 環境モニターを main と一緒に起動する（失敗してもコンソールに表示するだけで、主プログラムには影響しない）
+    try:
+        yield
+    finally:
+        stop_environment_monitor()
 
 
-# ---- 态度分数规则（只在后端定义，前端只上报“做了什么操作”）----
+app = FastAPI(title="Career Path Explorer", lifespan=lifespan)
+
+
+# ---- 態度スコアのルール（バックエンドだけで定義。フロントは「何をしたか」だけを送る）----
 SCORES = {
-    "swipe_like": 5,       # Tinder 画面：感兴趣
-    "swipe_nope": -5,      # Tinder 画面：不感兴趣
-    "detail_exit": 3,      # 打开详情页，但没表态就退出
-    "detail_like": 8,      # 详情页：感兴趣
-    "detail_neutral": 0,   # 详情页：一般（规则未指定，暂定 0）
-    "detail_nope": -8,     # 详情页：不感兴趣
+    "swipe_like": 5,       # Tinder 画面：気になる
+    "swipe_nope": -5,      # Tinder 画面：興味なし
+    "detail_exit": 3,      # 詳細ページを開いたが、態度を示さずに閉じた
+    "detail_like": 8,      # 詳細ページ：気になる
+    "detail_neutral": 0,   # 詳細ページ：普通（ルール未指定のため暫定で 0）
+    "detail_nope": -8,     # 詳細ページ：興味なし
 }
+
+
+# ---- 環境フラグ: data/environment_flag.json ----
+# environment_monitor.py(main と一緒に起動する別プロセス)が異常な音量変化を検出すると flag を 1 にする。
+# flag が 1 の間に行われた「好き/嫌い」は、増減値を元の 70% にする。
+# モニターの起動失敗やフラグファイルの読み込み失敗は、コンソールに出すだけで主プログラムは止めない。
+ENV_FLAG_FILE = BASE / "data" / "environment_flag.json"
+ENV_FACTOR = 0.7
+ENV_STALE_SEC = 10          # updated_at がこれより古いまま flag=1 なら「モニター停止」とみなして無視する
+_env_log_at = {}
+_monitor_proc = None
+_monitor_stopping = False
+
+
+def _env_log(msg, key=None, every=30):
+    """コンソールに出すだけ(同じ種類のメッセージは every 秒に1回まで)。表示に失敗しても止まらない"""
+    key = key or msg
+    now = time.time()
+    if now - _env_log_at.get(key, 0) >= every:
+        _env_log_at[key] = now
+        try:
+            print(f"[環境モニター] {msg}", flush=True)
+        except Exception:
+            pass
+
+
+def env_weight():
+    """(増減値にかける係数, 状態名)。flag=1 なら 0.7、それ以外は 1.0。
+    どんな問題があってもコンソール表示だけで必ず 1.0 を返し、主プログラムを止めない"""
+    try:
+        f = json.loads(ENV_FLAG_FILE.read_text(encoding="utf-8"))
+        if f.get("flag") not in (1, True):
+            return 1.0, None
+        upd = f.get("updated_at")
+        if upd is not None and time.time() - float(upd) > ENV_STALE_SEC:
+            _env_log("flag=1 のまま %d 秒以上更新されていません（モニターが停止した可能性があります）。このフラグは無視し、通常の重みで処理します" % ENV_STALE_SEC, "stale")
+            return 1.0, None
+        state = f.get("state")
+        return ENV_FACTOR, (state[:50] if isinstance(state, str) else None)
+    except Exception as e:
+        _env_log(f"{ENV_FLAG_FILE} を読み込めません（{type(e).__name__}: {e}）。通常の重み(1.0)で続行します", "read")
+    return 1.0, None
+
+
+def _write_flag_file(state):
+    ENV_FLAG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _save_json(ENV_FLAG_FILE, {"flag": 0, "state": state, "updated_at": None, "flagged_at": None, "owner_pid": os.getpid()})
+
+
+def _watch_monitor(p):
+    code = p.wait()
+    if not _monitor_stopping:
+        _env_log(f"環境モニターが終了しました（終了コード {code}）。主プログラムはそのまま動作し、選択は通常の重みで記録します", "exit", every=0)
+
+
+def start_environment_monitor():
+    global _monitor_proc
+    try:
+        _write_flag_file("初期値")                      # 起動時にフラグファイルを作成する（flag の既定値は 0）
+        _env_log(f"{ENV_FLAG_FILE} を作成しました（flag=0）", "init", every=0)
+    except Exception as e:
+        _env_log(f"フラグファイルを作成できませんでした：{e}。主プログラムの動作には影響しません", "init", every=0)
+    if os.environ.get("ENV_MONITOR", "1") == "0":
+        _env_log("ENV_MONITOR=0 が指定されたため、環境モニターは起動しません", "off", every=0)
+        return
+    script = BASE / "environment_monitor.py"
+    try:
+        if not script.exists():
+            _env_log(f"{script} が見つからないため、環境モニターを起動しませんでした。主プログラムの動作には影響しません", "start", every=0)
+            return
+        (BASE / "data").mkdir(exist_ok=True)
+        _monitor_proc = subprocess.Popen(
+            [sys.executable, str(script), "--flag-file", str(ENV_FLAG_FILE), "--owner-pid", str(os.getpid()), "--quiet"],
+            cwd=str(BASE / "data"))                     # environment_log.csv も data に書き出される
+        _env_log(f"環境モニターを起動しました（pid {_monitor_proc.pid}）", "start", every=0)
+        threading.Thread(target=_watch_monitor, args=(_monitor_proc,), daemon=True, name="env-monitor-watch").start()
+    except Exception as e:
+        _env_log(f"環境モニターの起動に失敗しました：{e}。主プログラムの動作には影響しません", "start", every=0)
+
+
+def stop_environment_monitor():
+    global _monitor_stopping
+    _monitor_stopping = True
+    p = _monitor_proc
+    try:
+        if p is not None and p.poll() is None:
+            p.terminate()
+            p.wait(timeout=3)
+    except Exception:
+        try:
+            p.kill()
+        except Exception:
+            pass
+    try:
+        _write_flag_file("停止")                        # 終了時に flag を 0 に戻す
+    except Exception:
+        pass
+
+
+@app.get("/api/environment")
+def environment_status():
+    """診断用: 環境フラグをこのサーバーがどう見ているか。ブラウザで /api/environment を開いて確認できる"""
+    factor, state = env_weight()
+    info = {"flag_file": str(ENV_FLAG_FILE), "exists": ENV_FLAG_FILE.exists(), "flag": None, "factor_now": factor, "state": state,
+            "monitor_process_running": _monitor_proc is not None and _monitor_proc.poll() is None, "monitor_alive": None}
+    try:
+        f = json.loads(ENV_FLAG_FILE.read_text(encoding="utf-8"))
+        info["flag"] = f.get("flag")
+        upd = f.get("updated_at")
+        info["monitor_alive"] = upd is not None and (time.time() - float(upd)) <= 5      # モニターは毎秒書き込む
+    except Exception:
+        pass
+    return info
 
 
 class Swipe(BaseModel):
@@ -61,10 +188,14 @@ def save_swipe(swipe: Swipe):
     career = CAREER_MAP.get(swipe.career_id)
     if not career:
         raise HTTPException(404, "career not found")
+    w, env_state = env_weight()
     record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "action": swipe.action,
-        "score": SCORES[swipe.action],
+        "score": round(SCORES[swipe.action] * w, 2),     # flag=1(異常な音)の間は ×0.7
+        "base_score": SCORES[swipe.action],
+        "env_weight": w,
+        "env_state": env_state,
         "career_id": career["id"],
         "title": career["title"],
         "abstract": career["abstract"],
@@ -72,6 +203,8 @@ def save_swipe(swipe: Swipe):
         "feature": career.get("feature", []),
         "schedule": career.get("schedule", []),
     }
+    if w < 1:
+        _env_log(f"{env_state}：今回の選択の重み ×{w}（{swipe.action}：{record['base_score']} → {record['score']}）", "applied", every=0)
     with SWIPE_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
     return {"ok": True, "score": record["score"]}
@@ -85,7 +218,7 @@ def read_swipes():
         return [json.loads(line) for line in f if line.strip()]
 
 
-# ---- 用户自己选择的偏好关键词：data/userdefkeywords.json ----
+# ---- ユーザー自身が選んだ好みのキーワード：data/userdefkeywords.json ----
 KEYWORD_FILE = BASE / "data" / "userdefkeywords.json"
 _kw_lock = threading.Lock()
 
@@ -113,13 +246,14 @@ def save_keywords(pick: KeywordPick):
     if not career:
         raise HTTPException(404, "career not found")
     allowed = career.get("feature", [])
-    chosen = [k for k in dict.fromkeys(pick.keywords) if k in allowed]  # 去重，并只接受该职业的 feature
+    chosen = [k for k in dict.fromkeys(pick.keywords) if k in allowed]  # 重複を除き、その職業の feature にあるものだけを受け付ける
     if not chosen:
         return {"ok": True, "saved": []}
+    w, _ = env_weight()
     with _kw_lock:
         data = _load_keywords()
         for k in chosen:
-            data["keywords"][k] = data["keywords"].get(k, 0) + 1
+            data["keywords"][k] = round(data["keywords"].get(k, 0) + w, 2)
         data["history"].append({
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "career_id": career["id"],
@@ -153,16 +287,17 @@ def explore_keyword(req: KeywordAction):
     if kw not in known:
         raise HTTPException(404, "keyword not found")
     now = datetime.now(timezone.utc).isoformat()
+    w, _ = env_weight()
     with _kw_lock:
         if req.action == "explore":                       # 好みの頻度に +3
             data = _load_keywords()
-            data["keywords"][kw] = data["keywords"].get(kw, 0) + 3
-            data["history"].append({"timestamp": now, "source": "explore_map", "keywords": [kw], "increment": 3})
+            data["keywords"][kw] = round(data["keywords"].get(kw, 0) + 3 * w, 2)
+            data["history"].append({"timestamp": now, "source": "explore_map", "keywords": [kw], "increment": round(3 * w, 2)})
             _save_json(KEYWORD_FILE, data)
         else:                                             # 苦手として escapekeyword.json に記録
             data = json.loads(ESCAPE_FILE.read_text(encoding="utf-8")) if ESCAPE_FILE.exists() else {"keywords": {}, "history": []}
-            data["keywords"][kw] = data["keywords"].get(kw, 0) + 1
-            data["history"].append({"timestamp": now, "source": "explore_map", "keywords": [kw]})
+            data["keywords"][kw] = round(data["keywords"].get(kw, 0) + w, 2)
+            data["history"].append({"timestamp": now, "source": "explore_map", "keywords": [kw], "increment": w})
             _save_json(ESCAPE_FILE, data)
     return {"ok": True, "keyword": kw, "action": req.action}
 
@@ -210,7 +345,7 @@ def _shift(path, old, new, weight, now):
     data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"keywords": {}, "history": []}
     kws = data.setdefault("keywords", {})
     for k in old:
-        left = kws.get(k, 0) - weight
+        left = round(kws.get(k, 0) - weight, 2)
         if left > 0:
             kws[k] = left
         else:

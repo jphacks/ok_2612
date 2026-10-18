@@ -11,86 +11,144 @@ from pathlib import Path
 import numpy as np
 
 # ---------------------------------------------------------------
-# 用法:
-#   python environment_monitor.py                       正常监测
-#   python environment_monitor.py --test-flag           不用麦克风，立刻写一次“有风险”标记（用来检查主程序是否读得到）
-#   python environment_monitor.py --flag-file D:\...\data\environment_flag.json   指定标记文件路径
-# 标记文件默认是“本脚本所在文件夹/data/environment_flag.json”，必须和主程序（main.py）所在文件夹下的 data 一致。
-# 也可以用环境变量 ENV_FLAG_FILE 指定。
+# このプログラムは main.py の起動時にバックグラウンドで自動的に起動されます（単体でも実行できます: python environment_monitor.py）
+#   --flag-file PATH   フラグファイルのパス（既定: このスクリプトのフォルダ/data/environment_flag.json）
+#   --owner-pid PID    main.py から渡されます。フラグファイル内の owner_pid が別の値になった
+#                      （= main が再起動された）場合、このプロセスは自動的に終了します
+#   --quiet            1秒ごとの表示をやめ、起動情報・flag の変化・エラーだけを表示します（main.py からの起動時に使用）
+#   --test-flag        マイクを使わずに「異常音」を模擬します（flag=1 を HOLD_SECONDS 秒間保ち、その後 0 に戻す）。動作確認用
+# 環境変数 ENV_HOLD_SECONDS: 異常を検出した後、flag を 1 に保つ秒数（既定 30）
 # ---------------------------------------------------------------
 parser = argparse.ArgumentParser()
-parser.add_argument("--flag-file", help="标记文件路径")
-parser.add_argument("--test-flag", action="store_true", help="写入一次“有风险”标记后退出")
+parser.add_argument("--flag-file")
+parser.add_argument("--owner-pid", type=int)
+parser.add_argument("--quiet", action="store_true")
+parser.add_argument("--test-flag", action="store_true")
 args = parser.parse_args()
 
-# 已经验证可以工作的 Audiohub Nano 输入设备
+# 動作確認済みの Audiohub Nano 入力デバイス
 DEVICE_INDEX = 1
 SAMPLE_RATE = 48000
 CHANNELS = 2
 BLOCK_SIZE = 4800  # 100 ms
 
-# 状态判断参数：后续可根据实验调整
+# 状態判定のパラメータ：実験に合わせて調整してください
 BASELINE_SECONDS = 30
 SUDDEN_CHANGE_DB = 12.0
 ELEVATED_DB = 5.0
 HIGH_DB = 10.0
 
-# 相对基线升高达到这个值，就视为“有风险”（默认 = 声音显著升高，突然增响也包含在内）
+# ベースラインからの上昇がこの値以上なら「異常な音の変動」とみなす（既定 = 「音が著しく上昇」。「突然の増音」も含む）
 RISK_CHANGE_DB = HIGH_DB
+# 異常を検出した後、flag を 1 に保つ秒数。この後 0 に戻る
+HOLD_SECONDS = float(os.environ.get("ENV_HOLD_SECONDS", 30))
 
 FLAG_FILE = Path(
     args.flag_file
     or os.environ.get("ENV_FLAG_FILE")
     or Path(__file__).resolve().parent / "data" / "environment_flag.json"
 ).resolve()
-FLAG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-last_risky_at = None   # 最近一次“有风险”的时刻（epoch 秒）
+last_abnormal_at = None   # 最後に異常を検出した時刻（epoch 秒）
+current_flag = 0
+superseded = False        # main が再起動され、新しい監視プロセスに引き継がれた
 _last_warn = 0.0
+
+
+def say(msg):
+    if not args.quiet:
+        print(msg)
 
 
 def _r(x):
     return None if x is None else round(float(x), 2)
 
 
-def write_flag(state, level, change, risky):
-    """每秒写一次标记文件（所以文件存在 = 监测脚本在运行）。
-    主程序只看 risky_at：距现在 30 秒内算“有风险”。脚本停止后标记会自动失效，不需要清除。"""
-    global last_risky_at, _last_warn
-    now = time.time()
-    if risky:
-        last_risky_at = now
-    data = {
-        "updated_at": now,          # 心跳：最近一次写入的时刻
-        "risky": bool(risky),       # 这一秒是否有风险
-        "state": state,
-        "level_dbfs": _r(level),
-        "change_db": _r(change),
-        "risky_at": last_risky_at,  # 最近一次有风险的时刻（从未有过则为 null）
-        "risky_at_iso": (datetime.fromtimestamp(last_risky_at).astimezone().isoformat(timespec="seconds")
-                         if last_risky_at else None),
-    }
+def _owner_in_file():
+    try:
+        return json.loads(FLAG_FILE.read_text(encoding="utf-8")).get("owner_pid")
+    except Exception:
+        return None
+
+
+def _save(data):
+    global _last_warn
     tmp = FLAG_FILE.with_suffix(".tmp")
     try:
+        FLAG_FILE.parent.mkdir(parents=True, exist_ok=True)
         tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         tmp.replace(FLAG_FILE)
         return True
     except OSError as e:
-        # Windows 上主程序恰好在读取时可能写入失败：下一秒会再写。持续失败则提示（最多每 10 秒一次）
-        if now - _last_warn > 10:
-            print(f"警告：无法写入标记文件 {FLAG_FILE}：{e}")
-            _last_warn = now
+        # Windows では主プログラムが読み込み中だと書き込みに失敗することがある。次の1秒でまた書くので問題ない。
+        # 失敗が続く場合だけコンソールに警告を出す（最大10秒に1回）
+        if time.time() - _last_warn > 10:
+            print(f"[環境モニター] 警告：フラグファイル {FLAG_FILE} に書き込めません：{e}")
+            _last_warn = time.time()
         return False
 
 
-print(f"标记文件: {FLAG_FILE}")
+def write_flag(state, level, change, abnormal):
+    """1秒ごとにフラグファイルを書く。異常を検出 → flag=1 にして HOLD_SECONDS 秒間保ち、その後 0 に戻す。現在の flag を返す"""
+    global last_abnormal_at, current_flag, superseded
+    now = time.time()
+    if args.owner_pid is not None:
+        owner = _owner_in_file()
+        if owner is not None and owner != args.owner_pid:   # main が再起動された。新しい main が新しい監視プロセスを起動する
+            superseded = True
+            print("[環境モニター] 主プログラムが再起動されたため、この監視プロセスは終了します")
+            raise SystemExit(0)
+    if abnormal:
+        last_abnormal_at = now
+    flag = 1 if (last_abnormal_at is not None and now - last_abnormal_at <= HOLD_SECONDS) else 0
+    if flag != current_flag:
+        print(f"[環境モニター] flag {current_flag} -> {flag}（{state}）")
+        current_flag = flag
+    _save({
+        "flag": flag,                 # 0 = 正常、1 = 異常音を検出（主プログラムはこれを見て増減値を 70% にする）
+        "state": state,
+        "level_dbfs": _r(level),
+        "change_db": _r(change),
+        "updated_at": now,            # ハートビート：最後に書き込んだ時刻（主プログラムはこれで監視プロセスが生きているか判断する）
+        "flagged_at": last_abnormal_at,
+        "owner_pid": args.owner_pid,
+    })
+    return flag
+
+
+def reset_flag(state="監視停止"):
+    """終了時に flag を 0 に戻す（フラグファイルがすでに新しい main のものになっている場合は触らない）"""
+    if superseded:
+        return
+    owner = _owner_in_file()
+    if args.owner_pid is not None and owner is not None and owner != args.owner_pid:
+        return
+    _save({"flag": 0, "state": state, "level_dbfs": None, "change_db": None, "updated_at": None,
+           "flagged_at": None, "owner_pid": args.owner_pid})
+
+
+print(f"[環境モニター] フラグファイル: {FLAG_FILE}")
+write_flag("起動", None, None, False)          # 起動と同時にフラグファイルを作成する（flag=0）
 
 if args.test_flag:
-    ok = write_flag("测试：模拟有风险", 0.0, 99.0, True)
-    print("已写入测试标记。接下来 30 秒内在页面上做的选择，权重应为 0.8 倍。" if ok else "写入失败。")
-    sys.exit(0 if ok else 1)
+    try:
+        print(f"[環境モニター] テストモード：flag=1 を {HOLD_SECONDS:g} 秒間保ちます")
+        end = time.time() + HOLD_SECONDS
+        while time.time() < end:
+            write_flag("テスト：異常音の模擬", 0.0, 99.0, True)
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        reset_flag()
+    print("[環境モニター] テスト終了。flag を 0 に戻しました")
+    sys.exit(0)
 
-import sounddevice as sd  # noqa: E402  （--test-flag 不需要麦克风库，所以放在后面导入）
+try:
+    import sounddevice as sd
+except Exception as e:                           # PortAudio が無い場合など：コンソールに表示するだけで、主プログラムには影響しない
+    print(f"[環境モニター] sounddevice を読み込めません（{e}）。環境モニターは起動しませんでした（flag は 0 のままです）。")
+    sys.exit(1)
 
 
 def rms_dbfs(audio):
@@ -98,7 +156,7 @@ def rms_dbfs(audio):
     rms = np.sqrt(np.mean(audio ** 2))
     return 20 * np.log10(max(rms, 1e-12))
 
-# 保存最近 30 秒的每秒音量，用于建立参考基线
+# 直近 30 秒の1秒ごとの音量を保存し、基準（ベースライン）の算出に使う
 baseline_history = deque(maxlen=BASELINE_SECONDS)
 previous_history = deque(maxlen=10)
 
@@ -116,11 +174,10 @@ writer.writerow([
     "change_db",
     "environment_state",
     "sudden_change",
-    "risky"
+    "flag"
 ])
 
-print("正在监测环境声音。按 Ctrl+C 停止。")
-print("前 30 秒用于建立初始基线，请保持正常环境。")
+print("[環境モニター] 環境音の監視を開始しました。Ctrl+C で停止します。最初の 30 秒はベースラインの作成に使うので、普段どおりの環境を保ってください。")
 
 try:
     with sd.InputStream(
@@ -132,7 +189,7 @@ try:
     ) as stream:
 
         while True:
-            # 收集约 1 秒音频，合并后计算 RMS
+            # 約 1 秒分の音声を集め、結合して RMS を計算する
             chunks = []
             for _ in range(10):
                 audio, overflowed = stream.read(BLOCK_SIZE)
@@ -145,34 +202,32 @@ try:
                 timespec="seconds"
             )
 
-            # 只使用当前时刻之前的记录作为参考
+            # 現在より前の記録だけを基準として使う
             if len(baseline_history) >= 10:
                 baseline = float(np.median(baseline_history))
                 change = level - baseline
 
-                # 检测相对于近期环境基线的突增
+                # 直近の環境ベースラインに対する急上昇を検出する
                 sudden = change >= SUDDEN_CHANGE_DB
 
                 if change >= HIGH_DB:
-                    state = "声音显著升高"
+                    state = "音が著しく上昇"
                 elif change >= ELEVATED_DB:
-                    state = "声音有所升高"
+                    state = "音がやや上昇"
                 else:
-                    state = "声音接近基线"
+                    state = "音はベースライン付近"
 
                 if sudden:
-                    state = "检测到突然增响"
+                    state = "突然の増音を検出"
 
-                risky = change >= RISK_CHANGE_DB
-                write_flag(state, level, change, risky)
+                flag = write_flag(state, level, change, change >= RISK_CHANGE_DB)
 
-                print(
+                say(
                     f"{timestamp} | "
                     f"音量 {level:6.1f} dBFS | "
-                    f"基线 {baseline:6.1f} | "
-                    f"变化 {change:+5.1f} dB | "
-                    f"{state}"
-                    f"{' | 有风险' if risky else ''}"
+                    f"ベースライン {baseline:6.1f} | "
+                    f"変化 {change:+5.1f} dB | "
+                    f"{state} | flag {flag}"
                 )
 
                 writer.writerow([
@@ -182,7 +237,7 @@ try:
                     round(change, 2),
                     state,
                     sudden,
-                    risky
+                    flag
                 ])
                 csv_file.flush()
 
@@ -190,10 +245,10 @@ try:
                 baseline = None
                 change = None
                 sudden = False
-                state = "正在建立基线"
-                write_flag(state, level, None, False)
+                state = "ベースライン作成中"
+                flag = write_flag(state, level, None, False)
 
-                print(
+                say(
                     f"{timestamp} | "
                     f"音量 {level:6.1f} dBFS | "
                     f"{state} ({len(baseline_history) + 1}/"
@@ -207,7 +262,7 @@ try:
                     "",
                     state,
                     False,
-                    False
+                    flag
                 ])
                 csv_file.flush()
 
@@ -215,10 +270,11 @@ try:
             previous_history.append(level)
 
 except KeyboardInterrupt:
-    print("\n监测结束，数据已保存至 environment_log.csv")
+    print("\n[環境モニター] 監視を終了しました。データは environment_log.csv に保存されています")
 
 except Exception as e:
-    print(f"\n发生错误：{e}")
+    print(f"\n[環境モニター] エラーが発生しました：{e}")
 
 finally:
     csv_file.close()
+    reset_flag()
