@@ -40,7 +40,7 @@
 * LLMを活用したマルチエージェント・パイプラインの導入
 * ユーザーの状況に応じた情報提示と自然な反応を促す設計
 * 意思決定支援の視点に基づく段階的な探索プロセスの設計
-![パイプラインの説明](https://raw.githubusercontent.com/jphacks/ok_2612/refs/heads/main/pipelineok12.png)
+![パイプラインの説明](pipelineok.png)
   
 
 ## 開発技術
@@ -56,4 +56,9 @@
 一例：
 * pip install -r requirements.txt
 * python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+## Presented by
+* P.Zhao, UoA
+* ML.Zhao, UR
+
 
