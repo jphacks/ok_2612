@@ -46,3 +46,9 @@
 * JavaScript
 * LLMサービス - OpenAI
 * マルチエージェント・パイプラインの構築
+
+## 起動方法
+一例：
+pip install -r requirements.txt
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
