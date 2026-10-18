@@ -41,11 +41,11 @@
   nav { display:flex; justify-content:space-around; background:#fff; border-top:1px solid #e6edf3;
         padding:.55rem 0 calc(.55rem + env(safe-area-inset-bottom)); }
   nav button { background:none; border:0; display:flex; flex-direction:column; align-items:center; gap:.25rem;
-               font-size:.7rem; color:var(--grey); flex:1; cursor:default; }
+               font-size:clamp(.58rem,2.6vw,.7rem); white-space:nowrap; color:var(--grey); flex:1; cursor:default; }
   nav button.active { color:var(--cyan); }
   nav button.live { cursor:pointer; }
-  #storyModal .modal-dialog, #exploreModal .modal-dialog { max-width:min(88vw,440px); margin-left:auto; margin-right:auto; }
-  #storyModal .modal-content, #exploreModal .modal-content { border:0; border-radius:28px; overflow:hidden; display:flex; flex-direction:column;
+  #storyModal .modal-dialog, #bubbleModal .modal-dialog, #visionModal .modal-dialog { max-width:min(88vw,440px); margin-left:auto; margin-right:auto; }
+  #storyModal .modal-content, #bubbleModal .modal-content, #visionModal .modal-content { border:0; border-radius:28px; overflow:hidden; display:flex; flex-direction:column;
                                max-height:calc(100vh - 2rem); max-height:calc(100dvh - 2rem); }
   #mBody { flex:1 1 auto; min-height:0; overflow-y:auto; }
   .m-close { position:absolute; top:.8rem; right:.8rem; z-index:5; width:2rem; height:2rem; padding:0;
@@ -86,10 +86,75 @@
   .tl-dot::after { content:""; position:absolute; left:50%; top:.5rem; width:10px; height:10px; border-radius:50%; background:#b9c9d8; transform:translateX(-50%); }
   .tl-item:last-child .tl-dot::before { display:none; }
   .tl-item:last-child .tl-time, .tl-item:last-child .tl-act { padding-bottom:0; }
-  .ex-body { flex:1 1 auto; min-height:0; overflow-y:auto; padding:3.2rem 1.5rem 1.5rem; }
-  .ex-body h3 { font-size:1rem; font-weight:700; margin:1.2rem 0 .6rem; }
-  .ex-main { background:var(--cyan); border-radius:16px; padding:.9rem 1rem; }
-  @media (prefers-reduced-motion:reduce){ .card-s{ transition:none !important; } }
+  .home-view { flex:1; display:flex; flex-direction:column; min-height:0; }
+  .map-view { flex:1; min-height:0; position:relative; }
+  .home-view[hidden], .map-view[hidden] { display:none; }
+  .map-area { position:absolute; top:.5rem; bottom:.5rem; left:50%; width:min(92vw,440px); transform:translateX(-50%); }
+  .bubble { position:absolute; box-sizing:border-box; border:0; border-radius:50%; padding:0; display:flex; align-items:center; justify-content:center;
+            text-align:center; line-height:1.3; font-weight:700; cursor:pointer; transition:transform .15s;
+            animation:pop .5s cubic-bezier(.2,.9,.3,1.2) backwards; }
+  .bubble span { display:block; max-width:84%; overflow-wrap:anywhere; }
+  .bubble:active { transform:scale(.95); }
+  .bubble.main { background:#00e8f8; color:var(--navy); box-shadow:0 0 40px rgba(0,232,248,.55); }
+  .bubble.pos { background:#3fe0ec; color:var(--navy); box-shadow:0 0 18px rgba(0,210,232,.35); }
+  .bubble.exp { background:#c9cdd2; color:var(--navy); }
+  .bubble.neg { background:#3a3d42; color:#fff; }
+  @keyframes pop { from { opacity:0; transform:scale(.6); } to { opacity:1; transform:scale(1); } }
+  .ex-body { padding:3.2rem 1.5rem 1.5rem; overflow-y:auto; }
+  .b-title { font-size:1.45rem; font-weight:700; text-align:center; margin:0 0 .9rem; }
+  .b-text { line-height:1.9; text-align:center; margin:0 0 1.2rem; }
+  .b-btn { display:block; width:100%; border:0; border-radius:12px; padding:.95rem; font-weight:700; font-size:1rem; margin-top:.7rem; color:var(--navy); }
+  .b-primary { background:#00e8f8; } .b-grey { background:#cbd0d6; }
+  .heart-fx { position:fixed; z-index:2000; pointer-events:none; color:var(--cyan); line-height:1;
+              animation:heartUp .8s ease-out both; }
+  @keyframes heartUp {
+    0% { opacity:0; transform:translate(-50%,-50%) scale(.4); }
+    15% { opacity:1; }
+    100% { opacity:0; transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.1); }
+  }
+  .bye-fx { position:fixed; z-index:2000; pointer-events:none; line-height:1; font-size:34px; opacity:0;
+            animation:byeWave 1s ease-in-out both; }
+  @keyframes byeWave {
+    0% { opacity:0; transform:translate(-50%,-50%) rotate(0) scale(.6); }
+    12% { opacity:1; transform:translate(-50%,-50%) rotate(0) scale(1); }
+    28% { opacity:1; transform:translate(-50%,-50%) rotate(25deg); }
+    43% { transform:translate(-50%,-50%) rotate(-20deg); }
+    58% { transform:translate(-50%,-50%) rotate(22deg); }
+    73% { opacity:1; transform:translate(-50%,-55%) rotate(-14deg); }
+    100% { opacity:0; transform:translate(-50%,-95%) rotate(0) scale(.9); }
+  }
+  .vision-view { flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .vision-view[hidden] { display:none; }
+  .vision-inner { width:min(92vw,440px); margin:0 auto; padding:1.2rem 0 1.5rem; }
+  .v-h { font-size:1.25rem; font-weight:700; margin:0 0 .3rem; }
+  .v-lead { color:var(--grey); font-size:.9rem; margin:0 0 1rem; }
+  .v-card { background:#fff; border-radius:22px; padding:1.2rem 1.3rem; margin-bottom:1rem; box-shadow:0 8px 24px rgba(28,43,74,.1); }
+  .v-no { width:1.7rem; height:1.7rem; border-radius:50%; background:var(--cyan); color:var(--navy); font-weight:700;
+          display:grid; place-items:center; font-size:.9rem; margin-bottom:.5rem; }
+  .v-title { font-size:1.2rem; font-weight:700; margin:0 0 .5rem; }
+  .v-reason { color:#3d4b58; line-height:1.8; font-size:.95rem; margin:0 0 .7rem; }
+  .v-tags { display:flex; flex-wrap:wrap; gap:.4rem; margin-bottom:.8rem; }
+  .v-tags span { border:1.5px solid var(--cyan); border-radius:999px; padding:.15rem .7rem; font-size:.78rem; }
+  .v-sub { font-size:.9rem; font-weight:700; margin:.4rem 0 .3rem; }
+  .v-skills { list-style:none; margin:0; padding:0; }
+  .v-skills li { padding:.7rem 0; border-top:1px solid #e6edf3; }
+  .v-skills b { display:block; margin-bottom:.15rem; }
+  .v-skills span { display:block; color:var(--grey); font-size:.88rem; line-height:1.7; }
+  .v-summary { color:#3d4b58; line-height:1.7; font-size:.95rem; margin:0 0 .8rem; }
+  .v-card { display:flex; align-items:center; gap:.8rem; }
+  .v-body { flex:1; min-width:0; }
+  .v-body .v-summary { margin:0; }
+  .v-body .v-tags { margin:.7rem 0 0; }
+  .v-skillnames { display:flex; flex-wrap:wrap; align-items:center; gap:.4rem; margin-top:.7rem; }
+  .v-skillnames .v-lbl { width:100%; font-size:.75rem; font-weight:700; color:var(--grey); }
+  .v-skillnames span:not(.v-lbl) { background:#eaf0f5; color:var(--navy); border-radius:8px; padding:.15rem .6rem; font-size:.78rem; }
+  .v-go { flex:0 0 auto; width:2.6rem; height:2.6rem; border:0; border-radius:50%; background:var(--cyan); color:var(--navy);
+          display:grid; place-items:center; box-shadow:0 4px 12px rgba(0,210,232,.35); }
+  .v-go:active { transform:scale(.93); }
+  #vmBody .v-title { font-size:1.45rem; }
+  #vmBody .v-sub { font-size:1.05rem; margin:1.3rem 0 .5rem; }
+  .v-msg { text-align:center; padding:4rem 1rem; }
+  @media (prefers-reduced-motion:reduce){ .card-s{ transition:none !important; } .bubble, .heart-fx, .bye-fx{ animation:none; opacity:0; } }
 </style>
 </head>
 <body>
@@ -104,16 +169,20 @@
 </svg>
 
 <div class="app">
+  <div class="home-view" id="homeView">
   <div class="stage" id="stage"></div>
   <div class="actions" id="actions">
     <div class="act no"><button class="round" id="btnNo" aria-label="興味なし（左矢印キー）"><svg width="30" height="30"><use href="#i-x"/></svg></button><span>興味なし</span></div>
     <button class="more" id="btnMore"><svg width="26" height="26"><use href="#i-book"/></svg>続きを読む</button>
     <div class="act yes"><button class="round yes" id="btnYes" aria-label="気になる（右矢印キー）"><svg width="34" height="34"><use href="#i-heart"/></svg></button><span>気になる</span></div>
   </div>
+  </div>
+  <section class="map-view" id="mapView" hidden aria-label="職業探索マップ"><div class="map-area" id="mapArea"></div></section>
+  <section class="vision-view" id="visionView" hidden aria-label="キャリアビジョン"><div class="vision-inner" id="visionInner"></div></section>
   <nav>
-    <button type="button" class="active" aria-current="page"><svg width="28" height="28"><use href="#i-home"/></svg>ホーム</button>
+    <button type="button" class="active live" id="navHome" aria-current="page"><svg width="28" height="28"><use href="#i-home"/></svg>ホーム</button>
     <button type="button" class="live" id="navMap"><svg width="28" height="28"><use href="#i-map"/></svg>職業探索マップ</button>
-    <button type="button"><svg width="28" height="28"><use href="#i-compass"/></svg>スキルマップ</button>
+    <button type="button" class="live" id="navVision"><svg width="28" height="28"><use href="#i-compass"/></svg>キャリアビジョン</button>
     <button type="button"><svg width="28" height="28"><use href="#i-user"/></svg>設定</button>
   </nav>
 </div>
@@ -148,15 +217,30 @@
   </div>
 </div>
 
-<div class="modal fade" id="exploreModal" tabindex="-1" aria-labelledby="exTitle">
+<div class="modal fade" id="bubbleModal" tabindex="-1" aria-labelledby="bTitle">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <button type="button" class="btn-close m-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
-      <div class="ex-body" id="exBody"></div>
+      <div class="ex-body">
+        <h2 class="b-title" id="bTitle"></h2>
+        <p class="b-text" id="bText"></p>
+        <button type="button" class="b-btn b-primary">この傾向をもっと探る</button>
+        <button type="button" class="b-btn b-grey">ちょっと違うかも</button>
+      </div>
     </div>
   </div>
 </div>
 
+<div class="modal fade" id="visionModal" tabindex="-1" aria-labelledby="vmTitle">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <button type="button" class="btn-close m-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+      <div class="ex-body" id="vmBody"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 let careers = [], idx = 0, busy = false, liked = [];
@@ -244,6 +328,8 @@ function showReason(c) {
 
 document.querySelectorAll('[data-choice]').forEach(b => b.onclick = () => {
   modalAction = b.dataset.choice;
+  if (modalAction === 'detail_like') heartBurst(b);
+  if (modalAction === 'detail_nope') byeBurst(b);
   const c = careers[idx];
   if (modalAction === 'detail_like' && Array.isArray(c.feature) && c.feature.length) showReason(c);
   else modal.hide();
@@ -262,7 +348,9 @@ document.getElementById('storyModal').addEventListener('hidden.bs.modal', () => 
 });
 
 function decide(action) {
-  if (busy || idx >= careers.length) return; busy = true;
+  if (busy || idx >= careers.length) return; busy = true; mapDirty = true;
+  if (action === 'swipe_like') heartBurst(document.getElementById('btnYes'));
+  if (action === 'swipe_nope') byeBurst(document.getElementById('btnNo'));
   const c = careers[idx], el = stage.querySelector('.card-s:not(.back)'), dir = FLY[action];
   el.style.transition = 'transform .35s, opacity .35s';
   el.style.transform = dir ? `translateX(${dir === 'right' ? 600 : -600}px) rotate(${dir === 'right' ? 25 : -25}deg)`
@@ -291,26 +379,190 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') decide('swipe_like');
 });
 
-// ---- 職業探索マップ：バックエンドの multi-agent 分析を実行して結果を表示 ----
-const exModal = new bootstrap.Modal('#exploreModal');
-const exItem = k => `<li class="mb-2"><b>${esc(k.keyword)}</b>${k.confidence != null ? ` <span class="text-secondary">${Math.round(k.confidence * 100)}%</span>` : ''}<br><small class="text-secondary">${esc(k.reason || '')}</small></li>`;
-const exSec = (t, arr) => arr && arr.length ? `<h3>${t}</h3><ul class="list-unstyled m-0">${arr.map(exItem).join('')}</ul>` : '';
-function exploreHTML(d) {
-  return `<h2 class="h5 fw-bold mb-3" id="exTitle">あなたのキーワード</h2><p class="m-abs">${esc(d.analysis || '')}</p>
-    <h3>いちばんの軸</h3><div class="ex-main"><b>${esc(d.main_keyword.keyword)}</b> ${Math.round(d.main_keyword.confidence * 100)}%<br><small>${esc(d.main_keyword.reason || '')}</small></div>`
-    + exSec('ほかの気になるキーワード', d.other_positive) + exSec('苦手そうなキーワード', d.negative) + exSec('探索してみたいキーワード', d.explore);
+// ---- 「気になる」を押した時のハートが浮かぶ演出（約1秒）----
+function heartBurst(el) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  for (let i = 0; i < 8; i++) {
+    const s = document.createElement('span'); s.className = 'heart-fx'; s.textContent = '♥';
+    s.style.cssText = `left:${cx}px;top:${cy}px;font-size:${12 + Math.random() * 14}px;opacity:0;` +
+      `color:${i % 2 ? '#00d2e8' : '#3fe0ec'};--dx:${(Math.random() - .5) * 90}px;--dy:${-(70 + Math.random() * 60)}px;animation-delay:${i * 40}ms`;
+    document.body.appendChild(s); s.addEventListener('animationend', () => s.remove());
+  }
 }
-document.getElementById('navMap').onclick = async () => {
-  const body = document.getElementById('exBody');
-  body.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-info" role="status"></div><p class="mt-3 text-secondary">あなたの好みを分析中…（少し時間がかかります）</p></div>';
-  exModal.show();
+
+// ---- 職業探索マップ（バブル表示）----
+let mapData = null, mapDirty = true, mapLoading = false;
+const visionView = document.getElementById('visionView'), homeView = document.getElementById('homeView'), mapView = document.getElementById('mapView'), mapArea = document.getElementById('mapArea');
+const bubbleModal = new bootstrap.Modal('#bubbleModal');
+
+// <layout>
+const BUBBLE_SIZE = { main: .40, pos: .25, exp: .235, neg: .25 };   // 基準長さ u に対する直径の比
+function relax(nodes, W, H) {                                         // d3 が読み込めない時の簡易版
+  for (let t = 0; t < 400; t++) {
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const p = nodes[i], q = nodes[j];
+      let dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy);
+      if (d < .01) { dx = 1; dy = 0; d = 1; }
+      const min = p.r + q.r + 8;
+      if (d < min) {
+        const push = min - d, wp = p.kind === 'main' ? 0 : q.kind === 'main' ? 1 : .5, wq = q.kind === 'main' ? 0 : p.kind === 'main' ? 1 : .5;
+        p.x -= dx / d * push * wp; p.y -= dy / d * push * wp; q.x += dx / d * push * wq; q.y += dy / d * push * wq;
+      }
+    }
+    nodes.forEach(n => clampNode(n, W, H));
+  }
+}
+function clampNode(n, W, H) {
+  n.x = Math.min(W - n.r - 4, Math.max(n.r + 4, n.x)); n.y = Math.min(H - n.r - 4, Math.max(n.r + 4, n.y));
+}
+function layoutOnce(items, W, H, scale) {
+  const u = Math.min(W, H * 0.65) * scale, cx = W / 2, cy = H / 2, rad = d => d * Math.PI / 180;
+  const nodes = items.map(it => ({ ...it, r: u * BUBBLE_SIZE[it.kind] / 2 }));
+  const of = k => nodes.filter(n => n.kind === k);
+  const edge = a => 1 / Math.hypot(Math.cos(a) / (W / 2 - 10), Math.sin(a) / (H / 2 - 10));   // 中心から端までの距離
+  const main = of('main')[0], r0 = main ? main.r : 0;
+  // 種類ごとの「中心からの狙い距離」: 積極=すぐ外側 / 探索=中間 / 消極=いちばん遠く
+  const dist = (n, a) => n.kind === 'pos' ? r0 + n.r + 4
+    : n.kind === 'exp' ? Math.max(r0 + u * BUBBLE_SIZE.pos * .8 + n.r, edge(a) * .5) : edge(a) - n.r * .3;
+  if (main) { main.x = cx; main.y = cy; }
+  const place = (arr, start) => arr.forEach((n, i) => {
+    const a = rad(start + i * 360 / arr.length), d = dist(n, a);
+    n.x = cx + Math.cos(a) * d; n.y = cy + Math.sin(a) * d;
+  });
+  place(of('pos'), -70); place(of('exp'), 40); place(of('neg'), 100);
+  if (typeof d3 !== 'undefined') {                                  // d3-force: 衝突回避つきの物理シミュレーション
+    if (main) { main.fx = cx; main.fy = cy; }
+    const ring = alpha => nodes.forEach(n => {                      // 狙い距離へ引き寄せる力
+      if (n.kind === 'main') return;
+      const a = Math.atan2(n.y - cy, n.x - cx), d = dist(n, a);
+      n.vx += (cx + Math.cos(a) * d - n.x) * .2 * alpha; n.vy += (cy + Math.sin(a) * d - n.y) * .2 * alpha;
+    });
+    const sim = d3.forceSimulation(nodes).force('ring', ring)
+      .force('collide', d3.forceCollide(n => n.r + 5).strength(1).iterations(3)).stop();
+    for (let t = 0; t < 300; t++) { sim.tick(); nodes.forEach(n => clampNode(n, W, H)); }
+  } else relax(nodes, W, H);
+  return nodes;
+}
+function overlaps(nodes) {
+  for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++)
+    if (Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y) < nodes[i].r + nodes[j].r + 2) return true;
+  return false;
+}
+function layoutBubbles(items, W, H) {
+  let nodes, s = 1;
+  for (let t = 0; t < 6; t++) { nodes = layoutOnce(items, W, H, s); if (!overlaps(nodes)) break; s *= .9; }   // 重なりが残るなら少し小さくして再配置
+  return nodes;
+}
+// </layout>
+
+function bubbleItems(d) {
+  const items = [];
+  if (d.main_keyword) items.push({ ...d.main_keyword, kind: 'main' });
+  (d.other_positive || []).forEach(k => items.push({ ...k, kind: 'pos' }));
+  (d.explore || []).forEach(k => items.push({ ...k, kind: 'exp' }));
+  (d.negative || []).forEach(k => items.push({ ...k, kind: 'neg' }));
+  return items;
+}
+
+function renderMap() {
+  if (mapView.hidden || !mapData) return;
+  const items = bubbleItems(mapData);
+  if (!items.length) { mapArea.innerHTML = '<p class="text-center text-secondary pt-5">表示できるキーワードがありませんでした。</p>'; return; }
+  const W = mapArea.clientWidth, H = mapArea.clientHeight;
+  const nodes = layoutBubbles(items, W, H);
+  mapArea.innerHTML = nodes.map((n, i) => {
+    const len = n.keyword.length, fs = Math.max(10, n.r * (n.kind === 'main' ? .26 : .3) * (len > 12 ? .75 : len > 8 ? .85 : 1));
+    return `<button type="button" class="bubble ${n.kind}" data-i="${i}" style="left:${n.x - n.r}px;top:${n.y - n.r}px;width:${2 * n.r}px;height:${2 * n.r}px;font-size:${fs}px;animation-delay:${i * 50}ms"><span>${esc(n.keyword)}</span></button>`;
+  }).join('');
+  mapArea.querySelectorAll('.bubble').forEach(b => b.onclick = () => {
+    const n = nodes[+b.dataset.i];
+    document.getElementById('bTitle').textContent = n.keyword;
+    document.getElementById('bText').textContent = n.justification || n.reason || '';
+    bubbleModal.show();
+  });
+}
+
+function setTab(name) {
+  homeView.hidden = name !== 'home'; mapView.hidden = name !== 'map'; visionView.hidden = name !== 'vision';
+  [['navHome', 'home'], ['navMap', 'map'], ['navVision', 'vision']].forEach(([id, t]) => {
+    const b = document.getElementById(id); b.classList.toggle('active', t === name);
+    if (t === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  if (name === 'vision') renderVision();
+}
+
+async function showMap() {
+  setTab('map');
+  if (mapLoading) return;
+  if (mapData && !mapDirty) return renderMap();           // 前回の分析から新しい操作がなければ再分析しない
+  mapLoading = true; visionState = 'loading'; renderVision();      // マップと一緒にキャリアビジョンも作る
+  mapArea.innerHTML = '<div class="text-center pt-5 mt-5"><div class="spinner-border text-info" role="status"></div><p class="mt-3 text-secondary">あなたの好みを分析中…<br>（少し時間がかかります）</p></div>';
   try {
     const r = await fetch('/api/explore/run', { method: 'POST' });
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || r.statusText);
-    body.innerHTML = exploreHTML(d);
-  } catch (e) { body.innerHTML = `<h2 class="h5 mb-3" id="exTitle">分析できませんでした</h2><p class="text-danger">${esc(e.message)}</p>`; }
-};
+    mapData = d; mapDirty = false; renderMap(); runVision();
+  } catch (e) {
+    visionState = visionData ? 'ready' : 'none'; renderVision();
+    mapArea.innerHTML = `<div class="text-center pt-5 mt-5 px-3"><p class="text-danger">${esc(e.message)}</p><button class="btn btn-outline-info rounded-pill" onclick="showMap()">もう一度</button></div>`;
+  } finally { mapLoading = false; }
+}
+
+// ---- キャリアビジョン（職種推薦 + スキル開発）----
+let visionState = 'none', visionData = null, visionError = '', visionAgain = false;   // none | loading | ready | error
+function visionHTML() {
+  if (visionState === 'none') return '<div class="v-msg"><p class="fw-bold mb-2">まずは「職業探索マップ」から</p><p class="text-secondary">先に職業探索マップであなたのキーワードを探索してから、キャリアビジョンを見てみましょう。順番に進むと、よりあなたに合った提案が届きます。</p></div>';
+  if (visionState === 'loading') return '<div class="v-msg"><div class="spinner-border text-info" role="status"></div><p class="mt-3 text-secondary">キャリアビジョンを作成中…<br>（少し時間がかかります）</p></div>';
+  if (visionState === 'error') return `<div class="v-msg"><p class="text-danger">${esc(visionError)}</p><button class="btn btn-outline-info rounded-pill" onclick="runVision()">もう一度</button></div>`;
+  const card = (c, i) => `<article class="v-card"><div class="v-body"><div class="v-no">${i + 1}</div><h3 class="v-title">${esc(c.title)}</h3>`
+    + (c.summary ? `<p class="v-summary">${esc(c.summary)}</p>` : '')
+    + ((c.related_keywords || []).length ? `<div class="v-tags">${c.related_keywords.map(k => `<span>${esc(k)}</span>`).join('')}</div>` : '')
+    + ((c.skills || []).length ? `<div class="v-skillnames"><span class="v-lbl">探索したいスキル</span>${c.skills.map(s => `<span>${esc(s.skill)}</span>`).join('')}</div>` : '')
+    + '</div>'
+    + `<button type="button" class="v-go" data-i="${i}" aria-label="${esc(c.title)}の詳細を見る"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></article>`;
+  return '<h2 class="v-h">あなたのキャリアビジョン</h2><p class="v-lead">キーワードから見えてきた、検討してみたい3つの方向性です。</p>' + visionData.careers.map(card).join('');
+}
+function renderVision() { if (!visionView.hidden) { document.getElementById('visionInner').innerHTML = visionHTML(); } }
+async function runVision() {
+  if (visionState === 'loading' && visionBusy) { visionAgain = true; return; }
+  visionBusy = true; visionState = 'loading'; renderVision();
+  try {
+    const r = await fetch('/api/vision/run', { method: 'POST' }), d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    visionData = d; visionState = 'ready';
+  } catch (e) { visionState = 'error'; visionError = e.message; }
+  visionBusy = false; renderVision();
+  if (visionAgain) { visionAgain = false; runVision(); }
+}
+let visionBusy = false;
+const visionModal = new bootstrap.Modal('#visionModal');
+function openVision(i) {
+  const c = visionData && visionData.careers[i]; if (!c) return;
+  const body = document.getElementById('vmBody');
+  body.innerHTML = `<h2 class="v-title" id="vmTitle">${esc(c.title)}</h2>` + (c.summary ? `<p class="v-summary">${esc(c.summary)}</p>` : '')
+    + `<h3 class="v-sub">お勧め理由</h3><p class="v-reason">${esc(c.reason)}</p>`
+    + ((c.related_keywords || []).length ? `<div class="v-tags">${c.related_keywords.map(k => `<span>${esc(k)}</span>`).join('')}</div>` : '')
+    + ((c.skills || []).length ? `<h3 class="v-sub">探索したいスキル</h3><ul class="v-skills">${c.skills.map(s => `<li><b>${esc(s.skill)}</b><span>${esc(s.reason)}</span></li>`).join('')}</ul>` : '');
+  body.scrollTop = 0; visionModal.show();
+}
+document.getElementById('visionInner').addEventListener('click', e => {
+  const b = e.target.closest('.v-go'); if (b) openVision(+b.dataset.i);
+});
+
+// ---- 「興味なし」を押した時の「バイバイ」演出（約1秒）----
+function byeBurst(el) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const r = el.getBoundingClientRect(), s = document.createElement('span');
+  s.className = 'bye-fx'; s.textContent = '👋';
+  s.style.cssText = `left:${r.left + r.width / 2}px;top:${r.top - 6}px`;
+  document.body.appendChild(s); s.addEventListener('animationend', () => s.remove());
+}
+
+document.getElementById('navMap').onclick = showMap;
+document.getElementById('navVision').onclick = () => setTab('vision');
+document.getElementById('navHome').onclick = () => setTab('home');
+let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(renderMap, 150); });
 
 fetch('/api/careers').then(r => r.json()).then(d => { careers = d; render(); });
 </script>

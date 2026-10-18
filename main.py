@@ -145,6 +145,22 @@ def explore_result():
     return json.loads(agents.CANDIDATES_FILE.read_text(encoding="utf-8"))
 
 
+# ---- キャリアビジョン：職種推薦 + スキル開発（Agent 4/5）----
+_vision_lock = threading.Lock()
+
+
+@app.post("/api/vision/run")
+def vision_run():
+    if not _vision_lock.acquire(blocking=False):
+        raise HTTPException(409, "作成中です。しばらくお待ちください。")
+    try:
+        return agents.run_vision()
+    except agents.PipelineError as e:
+        raise HTTPException(e.status, str(e))
+    finally:
+        _vision_lock.release()
+
+
 app.mount("/images", StaticFiles(directory=BASE / "images"), name="images")
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 

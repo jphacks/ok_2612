@@ -1,7 +1,9 @@
 """職業探索マップ用 multi-agent パイプライン
 Agent1: 職業ストーリー特徴抽出  → data/desribeanalyzeresult.json
 Agent2: 特徴ウェイティング     → data/keywordcandidates.json
-（Agent3 は後で追加）"""
+Agent3: 検証と正当化       → keywordcandidates.json を上書き更新（不適切なキーワードを削除し justification を付与）
+Agent4: 職種推薦           → data/careerrecommendations.json（run_vision）
+Agent5: スキル開発         → data/skillrecommendations.json（run_vision）"""
 import json
 import logging
 import os
@@ -17,6 +19,8 @@ SWIPE_FILE = DATA / "swipes.jsonl"
 USERKW_FILE = DATA / "userdefkeywords.json"
 DESCRIBE_FILE = DATA / "desribeanalyzeresult.json"      # 名前は指定どおり（綴り注意）
 CANDIDATES_FILE = DATA / "keywordcandidates.json"
+CAREERREC_FILE = DATA / "careerrecommendations.json"
+SKILLREC_FILE = DATA / "skillrecommendations.json"
 
 
 class PipelineError(Exception):
@@ -195,6 +199,188 @@ def agent2_weigh(client, model):
     return doc
 
 
+AGENT3_SYSTEM = """あなたは「検証と正当化(validation and justification)エージェント」です。
+入力は、別のエージェントが作成したユーザーのキーワード候補(keywords)と、その分析メモ(analysis)です。各キーワードには group が付いています:
+  - main_positive : ユーザーが最も強く惹かれていると推定される、中心となるポジティブな特徴
+  - other_positive: その他のポジティブな特徴
+  - negative      : ユーザーが興味なし・苦手と感じていると推定される特徴(すでにユーザー自身が理解している傾向)
+  - explore       : ユーザーが「まだ探索していない」、連想から提案された新しい方向性
+
+【ステップ1: 検証】各キーワードが適切か確認し、不適切なものは keep=false にして削除します。削除の基準:
+  (a) 抽象的すぎる・曖昧で、仕事や生活の特徴として意味が伝わらない
+  (b) 職業名・人名・固有名詞そのもの
+  (c) 実質的に同じ意味のキーワードが他にあり重複している(より適切な方を残す)
+  (d) group の性質に合わない(例: ポジティブ群なのに内容が否定的、explore が既出キーワードの言い換え)
+  (e) 不適切・差別的な表現、人格や能力を決めつける表現
+  (f) 日本語として不自然
+迷う場合は残してください(過剰に削除しない)。削除する場合は remove_reason に理由を短く書きます。
+
+【ステップ2: 正当化】残すキーワードごとに、客観的な「ジャスティファイア」の視点から、あたたかい言葉づかいで、
+その特徴が生活と職業においてなぜ大切か、どう捉え、どう付き合えばよいか(把握の仕方・助言)を、3〜4文で justification に書きます。
+語調は group によって必ず変えてください:
+  - main_positive / other_positive: 肯定し、励ます。ユーザーの魅力・強みとして認め、それをどう活かし伸ばすかを提案する。main_positive は「あなたの軸」としてやや力強く。
+  - negative: 苦手と感じることを否定せず、自然で大切な自己理解として肯定する。「克服すべき」とは言わず、避ける選び方や、必要な場面での無理のない付き合い方を穏やかに提案する。
+  - explore: ユーザーはまだ体験・確認していない方向性。決めつけず「もしかすると」「試してみる価値があるかもしれません」のように可能性として紹介し、小さく試せる具体的な一歩を提案する。すでに好きだとは言わない。
+書き方: 丁寧語(です・ます)。ユーザーのことは「あなた」と呼ぶ。診断や断定はしない。スコア・confidence・AI・システムなどの内部情報には触れない。マークダウンは使わない。
+
+出力はJSONのみ。入力のすべてのキーワードを1回ずつ、group と keyword を入力のまま変えずに含めること:
+{"items":[{"group":"","keyword":"","keep":true,"remove_reason":"","justification":""}]}
+削除する項目の justification は空文字にする。"""
+
+# ------------------------------------------------------------ agent 3
+def agent3_validate(client, model):
+    doc = json.loads(CANDIDATES_FILE.read_text(encoding="utf-8"))
+
+    def view(g, k):
+        return {"group": g, "keyword": k["keyword"], "confidence": k.get("confidence"), "reason": k.get("reason", "")}
+
+    items = [view("main_positive", doc["main_keyword"])] if doc.get("main_keyword") else []
+    items += [view("other_positive", k) for k in doc.get("other_positive", [])]
+    items += [view("negative", k) for k in doc.get("negative", [])]
+    items += [view("explore", k) for k in doc.get("explore", [])]
+    out = call_llm(client, model, AGENT3_SYSTEM,
+                   json.dumps({"analysis": doc.get("analysis", ""), "keywords": items}, ensure_ascii=False))
+
+    verdicts = {}
+    for v in out.get("items", []) if isinstance(out.get("items"), list) else []:
+        if isinstance(v, dict) and isinstance(v.get("keyword"), str):
+            verdicts.setdefault((v.get("group"), v["keyword"].strip()), v)   # モデルが勝手に追加した語は使われない
+
+    removed = []
+
+    def apply(group, k):
+        v = verdicts.get((group, k["keyword"]))
+        if v and v.get("keep") is False:
+            removed.append({"group": group, "keyword": k["keyword"], "reason": str(v.get("remove_reason", "")).strip()})
+            return None
+        text = str(v.get("justification", "")).strip() if v else ""
+        return {**k, "justification": text or k.get("reason", "")}   # 欠けていたら agent2 の reason で代用
+
+    main = apply("main_positive", doc["main_keyword"]) if doc.get("main_keyword") else None
+    others = [x for x in (apply("other_positive", k) for k in doc.get("other_positive", [])) if x]
+    if main is None and others:                              # 中心が削除されたら、最も信頼度の高い残りを昇格
+        main = max(others, key=lambda k: k.get("confidence", 0))
+        others.remove(main)
+    doc.update(main_keyword=main, other_positive=others,
+               negative=[x for x in (apply("negative", k) for k in doc.get("negative", [])) if x],
+               explore=[x for x in (apply("explore", k) for k in doc.get("explore", [])) if x],
+               validated_at=_now(), removed=removed)
+    _write_json(CANDIDATES_FILE, doc)
+    return doc
+
+
+# ------------------------------------------------------------ agent 4 & 5 (キャリアビジョン)
+KEYWORD_GUIDE = """入力のキーワード候補の意味:
+  - main_keyword: ユーザーが最も強く惹かれていると推定される中心的な特徴
+  - other_positive: その他のポジティブな特徴
+  - negative: ユーザーが苦手・興味なしと理解している特徴
+  - explore: ユーザーがまだ探索していない、連想から提案された新しい方向性
+  - analysis: 分析メモ
+  (confidence は推定の確かさ 0.0〜1.0、reason はその根拠)"""
+
+AGENT4_SYSTEM = """あなたは「職種推薦エージェント」です。ユーザーの職業選好を分析したキーワード候補をもとに、ユーザーが検討してみる価値のある職種を提案します。
+""" + KEYWORD_GUIDE + """
+
+タスク: 「検討してみたい職種」をちょうど3つ提案し、それぞれに理由を付ける。
+ルール:
+- 職種名は実在する一般的な日本語の職種名(例: データアナリスト、臨床心理士)。会社名・固有名詞は使わない。
+- 3つは互いに方向性が異なるもの(同じ職種の言い換えにしない)。1つは explore のキーワードも踏まえ、視野を広げる選択肢にしてよい。
+- main_keyword と other_positive を中心に活かす。negative の特徴が仕事の中心になる職種は避ける。
+- summary: その職種がどんな仕事かを説明する一文(40〜60文字程度)。ユーザー個人のことではなく、職種そのものの客観的な紹介にする。
+- reason: ユーザーの好みとどう結びつくかを、あたたかい言葉で2〜3文(です・ます調)。ユーザーのことは「あなた」と呼ぶ。断定せず「〜かもしれません」など可能性として伝える。スコアや内部情報には触れない。
+- related_keywords: その職種と結びつく入力キーワード(入力に含まれる語だけ、1〜3個)。
+出力はJSONのみ: {"careers":[{"title":"","summary":"","reason":"","related_keywords":[""]}]}"""
+
+AGENT5_SYSTEM = """あなたは「スキル開発エージェント」です。ユーザーの職業選好のキーワード候補と、推薦された3つの職種をもとに、各職種で次に探索・習得してみるとよいスキルを提案します。
+""" + KEYWORD_GUIDE + """
+  - recommended_careers: 推薦された職種(title)とその理由(reason)
+
+タスク: 各職種について、探索してみたいスキルをちょうど3つ、理由つきで提案する。
+ルール:
+- スキルは具体的で学べるもの(例: 「SQLによるデータ抽出」「傾聴とフィードバックの技法」)。「やる気」のような抽象的な資質は不可。
+- 3つは種類が混ざるようにする(専門的な技術 / 思考・対人 / 業務を広げる知識 など)。
+- reason: そのスキルがその職種で役立つ理由と、ユーザーの特徴とのつながり、最初の小さな一歩を、あたたかい言葉で1〜2文(です・ます調)。
+- 職種名(title)は入力のとおり変えずに返す。
+出力はJSONのみ: {"careers":[{"title":"","skills":[{"skill":"","reason":""}]}]}"""
+
+
+def _cand_view(doc):
+    def k(x, conf=True):
+        row = {"keyword": x["keyword"], "reason": x.get("reason", "")}
+        if conf and "confidence" in x:
+            row["confidence"] = x["confidence"]
+        return row
+    return {"main_keyword": k(doc["main_keyword"]) if doc.get("main_keyword") else None,
+            "other_positive": [k(x) for x in doc.get("other_positive", [])],
+            "negative": [k(x) for x in doc.get("negative", [])],
+            "explore": [k(x, False) for x in doc.get("explore", [])],
+            "analysis": doc.get("analysis", "")}
+
+
+def _text(v):
+    return str(v).strip() if v is not None else ""
+
+
+def agent4_careers(client, model, cands):
+    known = {x["keyword"] for x in [cands.get("main_keyword")] + cands.get("other_positive", [])
+             + cands.get("negative", []) + cands.get("explore", []) if x}
+    out = call_llm(client, model, AGENT4_SYSTEM, json.dumps(_cand_view(cands), ensure_ascii=False))
+    careers, seen = [], set()
+    for c in out.get("careers", []) if isinstance(out.get("careers"), list) else []:
+        if not isinstance(c, dict):
+            continue
+        title, reason = _text(c.get("title")), _text(c.get("reason"))
+        if not title or not reason or title in seen:
+            continue
+        seen.add(title)
+        rel = c.get("related_keywords") if isinstance(c.get("related_keywords"), list) else []
+        careers.append({"title": title, "summary": _text(c.get("summary")), "reason": reason,
+                        "related_keywords": [k for k in rel if k in known][:3]})
+    careers = careers[:3]
+    if not careers:
+        raise PipelineError("職種の推薦に失敗しました。もう一度お試しください。", 502)
+    _write_json(CAREERREC_FILE, {"generated_at": _now(), "model": model, "careers": careers})
+    return careers
+
+
+def agent5_skills(client, model, cands, careers):
+    payload = {**_cand_view(cands), "recommended_careers": [{"title": c["title"], "reason": c["reason"]} for c in careers]}
+    out = call_llm(client, model, AGENT5_SYSTEM, json.dumps(payload, ensure_ascii=False))
+    by_title = {_text(c.get("title")): c for c in out.get("careers", []) if isinstance(c, dict)} \
+        if isinstance(out.get("careers"), list) else {}
+    merged = []
+    for c in careers:
+        raw = by_title.get(c["title"], {}).get("skills")
+        skills = []
+        for sk in raw if isinstance(raw, list) else []:
+            if isinstance(sk, dict) and _text(sk.get("skill")):
+                skills.append({"skill": _text(sk["skill"]), "reason": _text(sk.get("reason"))})
+        merged.append({**c, "skills": skills[:3]})
+    if not any(m["skills"] for m in merged):
+        raise PipelineError("スキルの提案に失敗しました。もう一度お試しください。", 502)
+    _write_json(SKILLREC_FILE, {"generated_at": _now(), "model": model,
+                                "careers": [{"title": m["title"], "skills": m["skills"]} for m in merged]})
+    return merged
+
+
+def run_vision():
+    if not CANDIDATES_FILE.exists():
+        raise PipelineError("先に「職業探索マップ」を見てみましょう。", 400)
+    cands = json.loads(CANDIDATES_FILE.read_text(encoding="utf-8"))
+    if not cands.get("main_keyword") and not cands.get("other_positive"):
+        raise PipelineError("推薦に使えるキーワードがありませんでした。", 400)
+    key, model = load_config()
+    client = _make_client(key)
+    try:
+        careers = agent4_careers(client, model, cands)
+        return {"generated_at": _now(), "careers": agent5_skills(client, model, cands, careers)}
+    except PipelineError:
+        raise
+    except Exception as e:
+        log.exception("vision failed")
+        raise PipelineError(f"キャリアビジョンの作成中にエラーが発生しました（{type(e).__name__}）。", 502)
+
+
 # ------------------------------------------------------------ pipeline
 def run_pipeline():
     key, model = load_config()
@@ -204,7 +390,8 @@ def run_pipeline():
     client = _make_client(key)
     try:
         agent1_describe(client, model, records)
-        return agent2_weigh(client, model)
+        agent2_weigh(client, model)
+        return agent3_validate(client, model)
     except PipelineError:
         raise
     except Exception as e:
