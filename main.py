@@ -10,8 +10,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import agents
+import selector
 
 BASE = Path(__file__).parent
+ESCAPE_FILE = BASE / "data" / "escapekeyword.json"   # 「ちょっと違うかも」を押したキーワード
 SWIPE_FILE = BASE / "data" / "swipes.jsonl"   # 每行一条记录（JSON Lines）
 SWIPE_FILE.parent.mkdir(exist_ok=True)
 
@@ -41,9 +43,17 @@ class Swipe(BaseModel):
                     "detail_like", "detail_neutral", "detail_nope"]
 
 
+def _read_kw(path):
+    """{keyword: count}。ファイルが無い・壊れている場合は空"""
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("keywords", {})
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
 @app.get("/api/careers")
 def list_careers():
-    return CAREERS
+    return selector.pick_batch(CAREERS, _read_kw(KEYWORD_FILE), _read_kw(ESCAPE_FILE))
 
 
 @app.post("/api/swipes")
@@ -85,6 +95,12 @@ class KeywordPick(BaseModel):
     keywords: list[str]
 
 
+def _save_json(path, data):
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
 def _load_keywords():
     if KEYWORD_FILE.exists():
         return json.loads(KEYWORD_FILE.read_text(encoding="utf-8"))
@@ -110,9 +126,7 @@ def save_keywords(pick: KeywordPick):
             "title": career["title"],
             "keywords": chosen,
         })
-        tmp = KEYWORD_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(KEYWORD_FILE)
+        _save_json(KEYWORD_FILE, data)
     return {"ok": True, "saved": chosen}
 
 
@@ -120,6 +134,37 @@ def save_keywords(pick: KeywordPick):
 def read_keywords():
     with _kw_lock:
         return _load_keywords()
+
+
+# ---- 職業探索マップの吹き出し: 「この傾向をもっと探る」/「ちょっと違うかも」----
+class KeywordAction(BaseModel):
+    keyword: str
+    action: Literal["explore", "escape"]
+
+
+@app.post("/api/explore/keyword")
+def explore_keyword(req: KeywordAction):
+    kw = req.keyword.strip()
+    if not agents.CANDIDATES_FILE.exists():
+        raise HTTPException(400, "先に職業探索マップを開いてください。")
+    doc = json.loads(agents.CANDIDATES_FILE.read_text(encoding="utf-8"))
+    known = {k["keyword"] for k in [doc.get("main_keyword")] + doc.get("other_positive", [])
+             + doc.get("negative", []) + doc.get("explore", []) if k}
+    if kw not in known:
+        raise HTTPException(404, "keyword not found")
+    now = datetime.now(timezone.utc).isoformat()
+    with _kw_lock:
+        if req.action == "explore":                       # 好みの頻度に +3
+            data = _load_keywords()
+            data["keywords"][kw] = data["keywords"].get(kw, 0) + 3
+            data["history"].append({"timestamp": now, "source": "explore_map", "keywords": [kw], "increment": 3})
+            _save_json(KEYWORD_FILE, data)
+        else:                                             # 苦手として escapekeyword.json に記録
+            data = json.loads(ESCAPE_FILE.read_text(encoding="utf-8")) if ESCAPE_FILE.exists() else {"keywords": {}, "history": []}
+            data["keywords"][kw] = data["keywords"].get(kw, 0) + 1
+            data["history"].append({"timestamp": now, "source": "explore_map", "keywords": [kw]})
+            _save_json(ESCAPE_FILE, data)
+    return {"ok": True, "keyword": kw, "action": req.action}
 
 
 # ---- 職業探索マップ：multi-agent 分析 ----

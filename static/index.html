@@ -154,6 +154,10 @@
   #vmBody .v-title { font-size:1.45rem; }
   #vmBody .v-sub { font-size:1.05rem; margin:1.3rem 0 .5rem; }
   .v-msg { text-align:center; padding:4rem 1rem; }
+  .toast-fx { position:fixed; left:50%; bottom:calc(5.5rem + env(safe-area-inset-bottom)); transform:translateX(-50%); z-index:2000;
+              background:var(--navy); color:#fff; padding:.5rem 1.1rem; border-radius:999px; font-size:.9rem; pointer-events:none;
+              animation:toastFade 1.6s ease both; }
+  @keyframes toastFade { 0% { opacity:0; } 12%, 80% { opacity:1; } 100% { opacity:0; } }
   @media (prefers-reduced-motion:reduce){ .card-s{ transition:none !important; } .bubble, .heart-fx, .bye-fx{ animation:none; opacity:0; } }
 </style>
 </head>
@@ -224,8 +228,8 @@
       <div class="ex-body">
         <h2 class="b-title" id="bTitle"></h2>
         <p class="b-text" id="bText"></p>
-        <button type="button" class="b-btn b-primary">この傾向をもっと探る</button>
-        <button type="button" class="b-btn b-grey">ちょっと違うかも</button>
+        <button type="button" class="b-btn b-primary" data-act="explore">この傾向をもっと探る</button>
+        <button type="button" class="b-btn b-grey" data-act="escape">ちょっと違うかも</button>
       </div>
     </div>
   </div>
@@ -367,7 +371,7 @@ function showDone() {
   stage.innerHTML = `<div class="text-center pt-5"><h2 class="h4">すべてのストーリーを見ました</h2>
     <p class="text-secondary mt-3">${liked.length ? '気になる職業：' : '気になる職業はありませんでした。'}</p>
     <ul class="list-unstyled">${liked.map(c => `<li class="mb-2">${esc(c.title)}</li>`).join('')}</ul>
-    <button class="btn btn-outline-info rounded-pill px-4" onclick="idx=0;liked=[];render()">もう一度見る</button></div>`;
+    <button class="btn btn-outline-info rounded-pill px-4" onclick="newBatch()">もう一度見る</button></div>`;
 }
 
 document.getElementById('btnNo').onclick = () => decide('swipe_nope');
@@ -392,7 +396,7 @@ function heartBurst(el) {
 }
 
 // ---- 職業探索マップ（バブル表示）----
-let mapData = null, mapDirty = true, mapLoading = false;
+let mapData = null, mapDirty = true, mapLoading = false, bubbleCurrent = null;
 const visionView = document.getElementById('visionView'), homeView = document.getElementById('homeView'), mapView = document.getElementById('mapView'), mapArea = document.getElementById('mapArea');
 const bubbleModal = new bootstrap.Modal('#bubbleModal');
 
@@ -477,6 +481,7 @@ function renderMap() {
   }).join('');
   mapArea.querySelectorAll('.bubble').forEach(b => b.onclick = () => {
     const n = nodes[+b.dataset.i];
+    bubbleCurrent = n;
     document.getElementById('bTitle').textContent = n.keyword;
     document.getElementById('bText').textContent = n.justification || n.reason || '';
     bubbleModal.show();
@@ -562,9 +567,23 @@ function byeBurst(el) {
 document.getElementById('navMap').onclick = showMap;
 document.getElementById('navVision').onclick = () => setTab('vision');
 document.getElementById('navHome').onclick = () => setTab('home');
+// ---- 吹き出しの2択: 「この傾向をもっと探る」→ userdefkeywords に+3 / 「ちょっと違うかも」→ escapekeyword.json ----
+function toast(msg) {
+  const t = document.createElement('div'); t.className = 'toast-fx'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 1600);
+}
+document.querySelectorAll('#bubbleModal .b-btn').forEach(b => b.onclick = () => {
+  const kw = bubbleCurrent && bubbleCurrent.keyword; if (!kw) return;
+  bubbleModal.hide(); toast('記録しました');
+  fetch('/api/explore/keyword', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keyword: kw, action: b.dataset.act }) }).catch(console.error);
+});
 let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(renderMap, 150); });
 
-fetch('/api/careers').then(r => r.json()).then(d => { careers = d; render(); });
+function newBatch() {                                      // 新しい1バッチ(最大10件)を取得して最初から
+  fetch('/api/careers').then(r => r.json()).then(d => { careers = d; idx = 0; liked = []; render(); });
+}
+newBatch();
 </script>
 </body>
 </html>
