@@ -158,6 +158,33 @@
               background:var(--navy); color:#fff; padding:.5rem 1.1rem; border-radius:999px; font-size:.9rem; pointer-events:none;
               animation:toastFade 1.6s ease both; }
   @keyframes toastFade { 0% { opacity:0; } 12%, 80% { opacity:1; } 100% { opacity:0; } }
+  .settings-view { flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .settings-view[hidden] { display:none; }
+  .settings-inner { width:min(92vw,440px); margin:0 auto; padding:1.2rem 0 1.5rem; }
+  .set-card { background:#fff; border-radius:22px; padding:1.1rem 1.3rem; margin-bottom:1rem; box-shadow:0 8px 24px rgba(28,43,74,.1); }
+  .set-t { font-size:1rem; font-weight:700; margin:0 0 .6rem; display:flex; justify-content:space-between; align-items:baseline; }
+  .set-t .count { font-size:.8rem; font-weight:400; color:var(--grey); }
+  .set-sub { font-size:.85rem; font-weight:700; margin:.9rem 0 .4rem; }
+  .set-note { font-size:.78rem; color:var(--grey); margin:.6rem 0 0; line-height:1.6; }
+  .set-input { border-radius:12px; border:1.5px solid #d5dee8; padding:.6rem .8rem; }
+  .set-input:focus { border-color:var(--cyan); box-shadow:0 0 0 .2rem rgba(0,210,232,.2); }
+  .seg { display:flex; gap:.6rem; }
+  .seg label { flex:1; margin:0; position:relative; }
+  .seg input { position:absolute; opacity:0; pointer-events:none; }
+  .seg span { display:block; text-align:center; border:1.5px solid #d5dee8; border-radius:999px; padding:.55rem 0; background:#fff; cursor:pointer; }
+  .seg input:checked + span { background:var(--cyan); border-color:var(--cyan); font-weight:700; }
+  .seg label.no input:checked + span { background:#3a3d42; border-color:#3a3d42; color:#fff; }
+  .seg input:focus-visible + span { outline:3px solid var(--navy); outline-offset:2px; }
+  .add-row { display:flex; gap:.5rem; }
+  .btn-add { flex:0 0 auto; border:1.5px solid var(--cyan); background:#fff; color:var(--navy); border-radius:12px; padding:0 1rem; font-weight:700; }
+  .btn-add:disabled, .add-row input:disabled { opacity:.45; }
+  .chip-list { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.7rem; }
+  .chip-list:empty { display:none; }
+  .kchip { display:inline-flex; align-items:center; gap:.2rem; border-radius:999px; padding:.15rem .3rem .15rem .8rem; font-size:.85rem; border:1.5px solid var(--cyan); }
+  .kchip.no { background:#3a3d42; border-color:#3a3d42; color:#fff; }
+  .kchip button { border:0; background:none; color:inherit; width:1.5rem; height:1.5rem; border-radius:50%; font-size:1.05rem; line-height:1; }
+  .set-msg { margin:.8rem 0 0; text-align:center; font-size:.9rem; min-height:1.3rem; }
+  .set-msg.err { color:var(--nope); }
   @media (prefers-reduced-motion:reduce){ .card-s{ transition:none !important; } .bubble, .heart-fx, .bye-fx{ animation:none; opacity:0; } }
 </style>
 </head>
@@ -183,11 +210,36 @@
   </div>
   <section class="map-view" id="mapView" hidden aria-label="職業探索マップ"><div class="map-area" id="mapArea"></div></section>
   <section class="vision-view" id="visionView" hidden aria-label="キャリアビジョン"><div class="vision-inner" id="visionInner"></div></section>
+  <section class="settings-view" id="settingsView" hidden aria-label="設定"><div class="settings-inner">
+    <h2 class="v-h">設定</h2><p class="v-lead">あなたの情報を入力すると、次に選ばれるカードに反映されます。</p>
+    <div class="set-card">
+      <h3 class="set-t">専攻（専門分野）</h3>
+      <input id="majorInput" class="form-control set-input" maxlength="30" placeholder="例：情報工学" autocomplete="off" aria-label="専攻">
+      <p class="set-sub">専攻への気持ちは？</p>
+      <div class="seg" role="radiogroup" aria-label="専攻への態度">
+        <label><input type="radio" name="attitude" value="like"><span>好き</span></label>
+        <label class="no"><input type="radio" name="attitude" value="dislike"><span>苦手</span></label>
+      </div>
+      <p class="set-note">「好き」なら好みのキーワード、「苦手」なら避けたいキーワードに追加されます。</p>
+    </div>
+    <div class="set-card" id="likeBox">
+      <h3 class="set-t">好き・気になるキーワード<span class="count"></span></h3>
+      <div class="add-row"><input class="form-control set-input" maxlength="30" placeholder="キーワードを入力" aria-label="好き・気になるキーワード" autocomplete="off"><button type="button" class="btn-add">追加</button></div>
+      <div class="chip-list"></div>
+    </div>
+    <div class="set-card" id="dislikeBox">
+      <h3 class="set-t">興味がないキーワード<span class="count"></span></h3>
+      <div class="add-row"><input class="form-control set-input" maxlength="30" placeholder="キーワードを入力" aria-label="興味がないキーワード" autocomplete="off"><button type="button" class="btn-add">追加</button></div>
+      <div class="chip-list"></div>
+    </div>
+    <button type="button" class="b-btn b-primary" id="btnSave">保存する</button>
+    <p class="set-msg" id="setMsg" role="status"></p>
+  </div></section>
   <nav>
     <button type="button" class="active live" id="navHome" aria-current="page"><svg width="28" height="28"><use href="#i-home"/></svg>ホーム</button>
     <button type="button" class="live" id="navMap"><svg width="28" height="28"><use href="#i-map"/></svg>職業探索マップ</button>
     <button type="button" class="live" id="navVision"><svg width="28" height="28"><use href="#i-compass"/></svg>キャリアビジョン</button>
-    <button type="button"><svg width="28" height="28"><use href="#i-user"/></svg>設定</button>
+    <button type="button" class="live" id="navSettings"><svg width="28" height="28"><use href="#i-user"/></svg>設定</button>
   </nav>
 </div>
 
@@ -397,7 +449,7 @@ function heartBurst(el) {
 
 // ---- 職業探索マップ（バブル表示）----
 let mapData = null, mapDirty = true, mapLoading = false, bubbleCurrent = null;
-const visionView = document.getElementById('visionView'), homeView = document.getElementById('homeView'), mapView = document.getElementById('mapView'), mapArea = document.getElementById('mapArea');
+const settingsView = document.getElementById('settingsView'), visionView = document.getElementById('visionView'), homeView = document.getElementById('homeView'), mapView = document.getElementById('mapView'), mapArea = document.getElementById('mapArea');
 const bubbleModal = new bootstrap.Modal('#bubbleModal');
 
 // <layout>
@@ -489,12 +541,13 @@ function renderMap() {
 }
 
 function setTab(name) {
-  homeView.hidden = name !== 'home'; mapView.hidden = name !== 'map'; visionView.hidden = name !== 'vision';
-  [['navHome', 'home'], ['navMap', 'map'], ['navVision', 'vision']].forEach(([id, t]) => {
+  homeView.hidden = name !== 'home'; mapView.hidden = name !== 'map'; visionView.hidden = name !== 'vision'; settingsView.hidden = name !== 'settings';
+  [['navHome', 'home'], ['navMap', 'map'], ['navVision', 'vision'], ['navSettings', 'settings']].forEach(([id, t]) => {
     const b = document.getElementById(id); b.classList.toggle('active', t === name);
     if (t === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
   if (name === 'vision') renderVision();
+  if (name === 'settings' && !settingsLoaded) loadSettings();
 }
 
 async function showMap() {
@@ -578,6 +631,53 @@ document.querySelectorAll('#bubbleModal .b-btn').forEach(b => b.onclick = () => 
   fetch('/api/explore/keyword', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ keyword: kw, action: b.dataset.act }) }).catch(console.error);
 });
+// ---- 設定: 専攻・態度・キーワード（保存すると userdefkeywords.json / escapekeyword.json に直接反映。LLM不要）----
+function chipBox(root, variant) {
+  let items = [];
+  const list = root.querySelector('.chip-list'), input = root.querySelector('input'), add = root.querySelector('.btn-add'), count = root.querySelector('.count');
+  const draw = () => {
+    list.innerHTML = items.map((k, i) => `<span class="kchip ${variant}">${esc(k)}<button type="button" data-i="${i}" aria-label="${esc(k)}を削除">×</button></span>`).join('');
+    count.textContent = `${items.length} / 10`; input.disabled = add.disabled = items.length >= 10;
+  };
+  const push = () => {
+    const v = input.value.trim().replace(/\s+/g, ' '); input.value = '';
+    if (v && !items.includes(v) && items.length < 10) items.push(v);
+    draw();
+  };
+  add.onclick = push;
+  input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); push(); } });   // 日本語変換中のEnterは無視
+  list.addEventListener('click', e => { const b = e.target.closest('button'); if (b) { items.splice(+b.dataset.i, 1); draw(); } });
+  draw();
+  return { get: () => items.slice(), set: v => { items = (v || []).slice(0, 10); draw(); }, flush: push };
+}
+const likeBox = chipBox(document.getElementById('likeBox'), 'yes'), dislikeBox = chipBox(document.getElementById('dislikeBox'), 'no');
+const majorInput = document.getElementById('majorInput'), setMsg = document.getElementById('setMsg');
+let settingsLoaded = false;
+const showMsg = (t, err) => { setMsg.textContent = t; setMsg.classList.toggle('err', !!err); };
+function fillSettings(d) {
+  majorInput.value = d.major || '';
+  document.querySelectorAll('input[name=attitude]').forEach(r => r.checked = r.value === d.major_attitude);
+  likeBox.set(d.like_keywords); dislikeBox.set(d.dislike_keywords);
+}
+async function loadSettings() {
+  try { fillSettings(await (await fetch('/api/profile')).json()); settingsLoaded = true; }
+  catch (e) { showMsg('設定を読み込めませんでした。', true); }
+}
+document.getElementById('btnSave').onclick = async () => {
+  likeBox.flush(); dislikeBox.flush();                       // 入力したまま「追加」を押し忘れた分も含める
+  const checked = document.querySelector('input[name=attitude]:checked');
+  const body = { major: majorInput.value.trim(), major_attitude: checked ? checked.value : '', like_keywords: likeBox.get(), dislike_keywords: dislikeBox.get() };
+  if (body.major && !body.major_attitude) return showMsg('専攻への態度（好き / 苦手）を選んでください。', true);
+  try {
+    const r = await fetch('/api/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok) return showMsg(typeof d.detail === 'string' ? d.detail : '入力内容を確認してください。', true);
+    fillSettings(d); settingsLoaded = true; mapDirty = true;       // 次に職業探索マップを開いた時は再分析
+    showMsg('保存しました。新しい設定は次に選ばれるカードに反映されます。');
+  } catch (e) { showMsg('保存できませんでした。', true); }
+};
+document.getElementById('navSettings').onclick = () => setTab('settings');
+
 let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(renderMap, 150); });
 
 function newBatch() {                                      // 新しい1バッチ(最大10件)を取得して最初から

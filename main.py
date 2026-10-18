@@ -167,6 +167,91 @@ def explore_keyword(req: KeywordAction):
     return {"ok": True, "keyword": kw, "action": req.action}
 
 
+# ---- 設定画面: 専攻・態度・好き/興味なしキーワード（LLM不要。userdefkeywords.json / escapekeyword.json に直接反映）----
+PROFILE_FILE = BASE / "data" / "profile.json"
+W_LIKE, W_DISLIKE = 3, 1          # 申告したキーワードを各ファイルの回数に加算する重み
+MAX_KW, MAX_LEN = 10, 30
+
+
+class Profile(BaseModel):
+    major: str = ""
+    major_attitude: Literal["", "like", "dislike"] = ""
+    like_keywords: list[str] = []
+    dislike_keywords: list[str] = []
+
+
+def _norm_list(items, label):
+    out = []
+    for s in items:
+        s = " ".join(s.split())
+        if not s:
+            continue
+        if len(s) > MAX_LEN:
+            raise HTTPException(400, f"キーワードは{MAX_LEN}文字以内にしてください。")
+        if s not in out:
+            out.append(s)
+    if len(out) > MAX_KW:
+        raise HTTPException(400, f"{label}は{MAX_KW}個までです。")
+    return out
+
+
+def _read_profile():
+    try:
+        return json.loads(PROFILE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"major": "", "major_attitude": "", "like_keywords": [], "dislike_keywords": [],
+                "applied": {"like": [], "dislike": []}}
+
+
+def _shift(path, old, new, weight, now):
+    """前回の申告分(old)を取り消してから今回の申告分(new)を加算する。編集しても二重に積み上がらない"""
+    if set(old) == set(new):
+        return
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"keywords": {}, "history": []}
+    kws = data.setdefault("keywords", {})
+    for k in old:
+        left = kws.get(k, 0) - weight
+        if left > 0:
+            kws[k] = left
+        else:
+            kws.pop(k, None)
+    for k in new:
+        kws[k] = kws.get(k, 0) + weight
+    data.setdefault("history", []).append({"timestamp": now, "source": "settings", "keywords": new, "increment": weight})
+    _save_json(path, data)
+
+
+@app.get("/api/profile")
+def get_profile():
+    p = _read_profile()
+    return {k: p[k] for k in ("major", "major_attitude", "like_keywords", "dislike_keywords")}
+
+
+@app.put("/api/profile")
+def put_profile(p: Profile):
+    major = " ".join(p.major.split())
+    if len(major) > MAX_LEN:
+        raise HTTPException(400, f"専攻は{MAX_LEN}文字以内にしてください。")
+    attitude = p.major_attitude if major else ""
+    if major and not attitude:
+        raise HTTPException(400, "専攻への態度（好き / 苦手）を選んでください。")
+    likes = _norm_list(p.like_keywords, "好き・気になるキーワード")
+    dislikes = _norm_list(p.dislike_keywords, "興味がないキーワード")
+    eff_like = likes + ([major] if attitude == "like" and major not in likes else [])      # 専攻が「好き」→ 積極キーワード
+    eff_dis = dislikes + ([major] if attitude == "dislike" and major not in dislikes else [])   # 「苦手」→ 消極キーワード
+    clash = [k for k in eff_like if k in eff_dis]
+    if clash:
+        raise HTTPException(400, f"「{clash[0]}」が「好き」と「興味なし」の両方に入っています。どちらか一方にしてください。")
+    now = datetime.now(timezone.utc).isoformat()
+    with _kw_lock:
+        old = _read_profile().get("applied", {"like": [], "dislike": []})
+        _shift(KEYWORD_FILE, old.get("like", []), eff_like, W_LIKE, now)
+        _shift(ESCAPE_FILE, old.get("dislike", []), eff_dis, W_DISLIKE, now)
+        _save_json(PROFILE_FILE, {"major": major, "major_attitude": attitude, "like_keywords": likes, "dislike_keywords": dislikes,
+                                  "applied": {"like": eff_like, "dislike": eff_dis}, "updated_at": now})
+    return {"major": major, "major_attitude": attitude, "like_keywords": likes, "dislike_keywords": dislikes}
+
+
 # ---- 職業探索マップ：multi-agent 分析 ----
 _explore_lock = threading.Lock()
 
