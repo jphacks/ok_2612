@@ -1,7 +1,7 @@
 # 職業探索サービス「しごとくじ」
 
-[![JPHACK2026](https://jphacks.com/wp-content/uploads/2026/07/IMG_5316.png)](https://www.youtube.com/watch?v=piaNsc6ilBI)
-[![UIUX](https://raw.githubusercontent.com/jphacks/ok_2612/refs/heads/main/UIUX_Image.png)
+![JPHACK2026](https://jphacks.com/wp-content/uploads/2026/07/IMG_5316.png)
+![UIUX](readme/UIUX_Image.png)
 
 ## 製品概要
 ### 背景
@@ -41,7 +41,7 @@
 * LLMを活用したマルチエージェント・パイプラインの導入
 * ユーザーの状況に応じた情報提示と自然な反応を促す設計
 * 意思決定支援の視点に基づく段階的な探索プロセスの設計
-![パイプラインの説明](pipelineok.png)
+![パイプラインの説明](readme/pipelineok.png)
   
 
 ## 開発技術
