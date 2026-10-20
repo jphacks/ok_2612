@@ -47,6 +47,7 @@
   #storyModal .modal-dialog, #bubbleModal .modal-dialog, #visionModal .modal-dialog { max-width:min(88vw,440px); margin-left:auto; margin-right:auto; }
   #storyModal .modal-content, #bubbleModal .modal-content, #visionModal .modal-content { border:0; border-radius:28px; overflow:hidden; display:flex; flex-direction:column;
                                max-height:calc(100vh - 2rem); max-height:calc(100dvh - 2rem); }
+  #storyModal .modal-content { max-height:calc(100vh - 6rem); max-height:calc(100dvh - 6rem); }   /* 上下に余白を残す（他のモーダルは従来どおり） */
   #mBody { flex:1 1 auto; min-height:0; overflow-y:auto; }
   .m-close { position:absolute; top:.8rem; right:.8rem; z-index:5; width:2rem; height:2rem; padding:0;
              background-color:#fffd; border-radius:50%; background-size:.8rem; opacity:1; }
@@ -58,8 +59,8 @@
   #mStory p { line-height:1.9; margin-bottom:.9rem; }
   .m-foot { flex-direction:column; align-items:stretch; gap:.6rem; border-top:1px solid #e6edf3;
             padding:.8rem 1rem calc(.8rem + env(safe-area-inset-bottom)); }
-  .m-ask { margin:0; text-align:center; font-size:.8rem; color:var(--grey); }
-  .m-choices { display:grid; grid-template-columns:repeat(3,1fr); gap:.6rem; width:100%; }
+  .m-choices { display:flex; justify-content:space-around; align-items:flex-start; width:100%; padding:.2rem 0 .1rem; }
+  .act.neutral span { color:var(--grey); }
   .m-btn { border:1.5px solid #d5dee8; background:#fff; color:var(--navy); border-radius:999px; padding:.65rem 0; font-size:.95rem; }
   .m-btn.nope { color:var(--nope); border-color:#f0c4bb; }
   .m-btn.primary { background:var(--cyan); border-color:var(--cyan); font-weight:700; }
@@ -191,6 +192,7 @@
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></symbol>
   <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 21s-8-5.2-8-11a4.6 4.6 0 0 1 8-3 4.6 4.6 0 0 1 8 3c0 5.8-8 11-8 11z" fill="currentColor"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6c-2-1.5-5-2-8-2v14c3 0 6 .5 8 2 2-1.5 5-2 8-2V4c-3 0-6 .5-8 2zM12 6v14" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linejoin="round"/></symbol>
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" fill="currentColor"/></symbol>
@@ -253,11 +255,10 @@
       </div>
       <div class="modal-footer m-foot">
         <div class="m-view" id="viewChoice">
-          <p class="m-ask">この職業にどのくらい興味がありますか？</p>
           <div class="m-choices">
-            <button type="button" class="m-btn nope" data-choice="detail_nope">興味なし</button>
-            <button type="button" class="m-btn" data-choice="detail_neutral">普通</button>
-            <button type="button" class="m-btn primary" data-choice="detail_like">気になる</button>
+            <div class="act no"><button type="button" class="round" data-choice="detail_nope" aria-label="興味なし"><svg width="30" height="30"><use href="#i-x"/></svg></button><span>興味なし</span></div>
+            <div class="act neutral"><button type="button" class="round" data-choice="detail_neutral" aria-label="普通"><svg width="30" height="30"><use href="#i-minus"/></svg></button><span>普通</span></div>
+            <div class="act yes"><button type="button" class="round yes" data-choice="detail_like" aria-label="気になる"><svg width="34" height="34"><use href="#i-heart"/></svg></button><span>気になる</span></div>
           </div>
         </div>
         <div class="m-view" id="viewReason" hidden>
