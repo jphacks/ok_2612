@@ -68,13 +68,21 @@
   .done { text-align:center; padding:2rem 1rem; }
   .m-view { display:flex; flex-direction:column; gap:.7rem; width:100%; }
   .m-view[hidden] { display:none; }
-  .m-q { margin:0; font-size:1.05rem; font-weight:700; text-align:center; }
-  .m-chips { display:grid; grid-template-columns:repeat(2,1fr); gap:.6rem; }
-  .chip { border:1.5px solid var(--cyan); background:#fff; color:var(--navy); border-radius:999px; padding:.65rem .4rem; font-size:.9rem; }
-  .chip[aria-pressed="true"] { background:var(--cyan); font-weight:700; }
-  .m-reason-actions { display:flex; align-items:center; justify-content:space-between; gap:.8rem; margin-top:.2rem; }
+  /* 「何があなたを惹きつけましたか？」中央ダイアログ（故事モーダルの上に重ねる） */
+  .reason-layer { position:fixed; inset:0; z-index:1; display:none; align-items:center; justify-content:center;
+                  background:rgba(28,43,74,.38); padding:1rem; }
+  .reason-layer.show { display:flex; animation:layerIn .2s ease both; }
+  @keyframes layerIn { from { opacity:0; } to { opacity:1; } }
+  .reason-dialog { width:min(80vw,340px); border-radius:28px; padding:1.7rem 1.4rem 1.3rem;
+                   background:linear-gradient(180deg,#fff 25%,#e4fbfe 100%); box-shadow:0 16px 40px rgba(28,43,74,.28); }
+  .m-q { margin:0 0 1.2rem; font-size:1rem; font-weight:700; text-align:left; }
+  .m-chips { display:grid; grid-template-columns:repeat(2,1fr); gap:.8rem; }
+  .chip { border:1.5px solid #d5dee8; background:#fff; color:var(--navy); border-radius:999px; padding:.6rem .4rem; font-size:.9rem; }
+  .chip:hover, .chip:focus-visible { border-color:var(--cyan); }
+  .chip[aria-pressed="true"] { background:var(--cyan); border-color:var(--cyan); font-weight:700; }
+  .m-reason-actions { display:flex; align-items:center; justify-content:space-between; gap:.8rem; margin-top:1.4rem; }
   .m-skip { background:none; border:0; color:#0a9fb2; font-size:.9rem; padding:.4rem 0; text-align:left; }
-  .m-done { padding-left:2rem; padding-right:2rem; }
+  .m-done { padding-left:1.6rem; padding-right:1.6rem; }
   .m-done:disabled { opacity:.4; }
   .m-sec { font-size:1.15rem; font-weight:700; margin:1.4rem 0 .8rem; }
   .tl { list-style:none; margin:0; padding:0; }
@@ -186,7 +194,7 @@
   .kchip button { border:0; background:none; color:inherit; width:1.5rem; height:1.5rem; border-radius:50%; font-size:1.05rem; line-height:1; }
   .set-msg { margin:.8rem 0 0; text-align:center; font-size:.9rem; min-height:1.3rem; }
   .set-msg.err { color:var(--nope); }
-  @media (prefers-reduced-motion:reduce){ .card-s{ transition:none !important; } .bubble, .heart-fx, .bye-fx{ animation:none; opacity:0; } }
+  @media (prefers-reduced-motion:reduce){ .reason-layer.show{ animation:none; } .card-s{ transition:none !important; } .bubble, .heart-fx, .bye-fx{ animation:none; opacity:0; } }
 </style>
 </head>
 <body>
@@ -261,14 +269,16 @@
             <div class="act yes"><button type="button" class="round yes" data-choice="detail_like" aria-label="気になる"><svg width="34" height="34"><use href="#i-heart"/></svg></button><span>気になる</span></div>
           </div>
         </div>
-        <div class="m-view" id="viewReason" hidden>
-          <p class="m-q">何があなたを惹きつけましたか？</p>
-          <div class="m-chips" id="mChips"></div>
-          <div class="m-reason-actions">
-            <button type="button" class="m-skip" id="btnSkip">ちょっと気になっただけ</button>
-            <button type="button" class="m-btn primary m-done" id="btnDone" disabled>完了</button>
-          </div>
-        </div>
+      </div>
+    </div>
+  </div>
+  <div class="reason-layer" id="reasonLayer">
+    <div class="reason-dialog" role="dialog" aria-modal="true" aria-labelledby="reasonQ">
+      <p class="m-q" id="reasonQ">何があなたを惹きつけましたか？</p>
+      <div class="m-chips" id="mChips"></div>
+      <div class="m-reason-actions">
+        <button type="button" class="m-skip" id="btnSkip">ちょっと気になっただけ</button>
+        <button type="button" class="m-btn primary m-done" id="btnDone" disabled>完了</button>
       </div>
     </div>
   </div>
@@ -354,8 +364,8 @@ function scheduleHTML(list) {
 }
 
 function showView(name) {
-  document.getElementById('viewChoice').hidden = name !== 'choice';
-  document.getElementById('viewReason').hidden = name !== 'reason';
+  document.getElementById('viewChoice').hidden = false;          // 下の3択ボタンは残す（ダイアログの背後に透けて見える）
+  document.getElementById('reasonLayer').classList.toggle('show', name === 'reason');
 }
 
 function openStory() {
@@ -381,6 +391,7 @@ function showReason(c) {
     done.disabled = !pendingKw.length;
   });
   showView('reason');
+  const first = box.querySelector('.chip'); if (first) first.focus();   // キーボード操作でも迷わないように
 }
 
 document.querySelectorAll('[data-choice]').forEach(b => b.onclick = () => {
